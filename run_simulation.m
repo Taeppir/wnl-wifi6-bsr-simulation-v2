@@ -14,31 +14,32 @@ function results = run_simulation(cfg)
     %% ═══════════════════════════════════════════════════
     %  1. 설정 로드
     %  ═══════════════════════════════════════════════════
+    
     if nargin < 1 || isempty(cfg)
         cfg = config_default();
     end
-
+    
     % 설정 검증
     cfg = validate_config(cfg);
-
+    
     %% ═══════════════════════════════════════════════════
     %  2. 시뮬레이터 초기화
     %  ═══════════════════════════════════════════════════
-
+    
     if cfg.verbose >= 1
         print_header(cfg);
         tic;
     end
-
+    
     % 시뮬레이터 인스턴스 생성
     sim = Simulator(cfg);
-
+    
     %% ═══════════════════════════════════════════════════
     %  3. 시뮬레이션 실행
     %  ═══════════════════════════════════════════════════
     
     results = sim.run();
-
+    
     %% ═══════════════════════════════════════════════════
     %  4. 결과 출력
     %  ═══════════════════════════════════════════════════
@@ -89,6 +90,9 @@ function print_header(cfg)
     fprintf('  시뮬레이션 시간: %.1f초 (워밍업: %.1f초)\n', ...
         cfg.simulation_time, cfg.warmup_time);
     fprintf('  총 슬롯 수: %d (워밍업: %d)\n', cfg.total_slots, cfg.warmup_slots);
+    fprintf('  TF 주기: %d 슬롯 (%.1f μs)\n', cfg.frame_exchange_slots, ...
+        cfg.frame_exchange_slots * cfg.slot_duration * 1e6);
+    fprintf('  예상 TF 수: %d회\n', ceil(cfg.total_slots / cfg.frame_exchange_slots));
     fprintf('  STA 수: %d\n', cfg.num_stas);
     fprintf('  RA-RU: %d, SA-RU: %d\n', cfg.num_ru_ra, cfg.num_ru_sa);
     fprintf('  OCW: [%d, %d]\n', cfg.ocw_min, cfg.ocw_max);
@@ -119,13 +123,14 @@ function print_results(results, cfg, elapsed)
 
     fprintf('\n');
     fprintf('╔══════════════════════════════════════════════════════════════╗\n');
-    fprintf('║                     시뮬레이션 결과                              ║\n');
+    fprintf('║                     시뮬레이션 결과                           ║\n');
     fprintf('╚══════════════════════════════════════════════════════════════╝\n\n');
     
     fprintf('[실행 정보]\n');
     fprintf('  실제 소요 시간: %.2f초\n', elapsed);
     fprintf('  시뮬레이션 시간: %.2f초\n', cfg.simulation_time);
     fprintf('  가속비: %.1fx\n', cfg.simulation_time / elapsed);
+    fprintf('  처리된 TF 주기: %d회\n', results.tf_count);
     
     fprintf('\n[패킷 통계]\n');
     fprintf('  생성: %d개\n', results.packets.generated);
@@ -141,6 +146,15 @@ function print_results(results, cfg, elapsed)
     fprintf('\n[처리율]\n');
     fprintf('  총 처리율: %.2f Mbps\n', results.throughput.total_mbps);
     fprintf('  채널 이용률: %.1f%%\n', results.throughput.channel_utilization * 100);
+    
+    fprintf('\n[RU 활용률]\n');
+    fprintf('  RA-RU 활용률: %.1f%% (성공: %.1f%%)\n', ...
+        results.ru_utilization.ra_utilization * 100, ...
+        results.ru_utilization.ra_success_util * 100);
+    fprintf('  SA-RU 활용률: %.1f%%\n', results.ru_utilization.sa_utilization * 100);
+    fprintf('  전체 RU 활용률: %.1f%% (성공: %.1f%%)\n', ...
+        results.ru_utilization.total_utilization * 100, ...
+        results.ru_utilization.total_success_util * 100);
     
     fprintf('\n[UORA (RA-RU)]\n');
     fprintf('  성공률: %.2f%%\n', results.uora.success_rate * 100);

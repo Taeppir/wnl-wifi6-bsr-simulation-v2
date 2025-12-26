@@ -73,11 +73,11 @@ classdef MetricsCollector < handle
         end
         
         %% ═══════════════════════════════════════════════════
-        %  슬롯별 수집
+        %  TF 주기별 수집
         %  ═══════════════════════════════════════════════════
         
-        function collect(obj, slot, success, collided, idle, sa_assignments, stas, ~)
-            obj.total_slots = obj.total_slots + 1;
+        function collect(obj, slot, success, collided, idle, sa_assignments, stas, ~, tf_count)
+            obj.total_slots = obj.total_slots + obj.cfg.frame_exchange_slots;  % TF 주기의 슬롯 수 누적
             
             % RA-RU 통계
             ra_success = sum(strcmp({success.tx_type}, 'ra'));
@@ -133,8 +133,11 @@ classdef MetricsCollector < handle
         %  최종 결과 계산
         %  ═══════════════════════════════════════════════════
         
-        function results = finalize(obj, stas)
+        function results = finalize(obj, stas, tf_count)
             results = struct();
+            
+            %% TF 통계
+            results.tf_count = tf_count;
             
             %% 패킷 통계
             total_generated = sum([stas.num_packets]);
@@ -208,6 +211,43 @@ classdef MetricsCollector < handle
             results.uora.total_success = obj.ra_success_count;
             results.uora.total_collision = obj.ra_collision_count;
             results.uora.total_idle = obj.ra_idle_count;
+            
+            %% RU 활용률 통계
+            % RA-RU: 사용된 비율 (success + collision, idle 제외)
+            total_ra_ru_slots = obj.total_slots * obj.cfg.num_ru_ra;
+            ra_used = obj.ra_success_count + obj.ra_collision_count;
+            if total_ra_ru_slots > 0
+                results.ru_utilization.ra_utilization = ra_used / total_ra_ru_slots;
+                results.ru_utilization.ra_success_util = obj.ra_success_count / total_ra_ru_slots;
+            else
+                results.ru_utilization.ra_utilization = 0;
+                results.ru_utilization.ra_success_util = 0;
+            end
+            
+            % SA-RU: 사용된 비율
+            total_sa_ru_slots = obj.total_slots * obj.cfg.num_ru_sa;
+            if total_sa_ru_slots > 0
+                results.ru_utilization.sa_utilization = obj.sa_tx_count / total_sa_ru_slots;
+            else
+                results.ru_utilization.sa_utilization = 0;
+            end
+            
+            % 전체 RU: 가중 평균
+            total_ru_slots = total_ra_ru_slots + total_sa_ru_slots;
+            total_used = ra_used + obj.sa_tx_count;
+            total_success = obj.ra_success_count + obj.sa_tx_count;
+            if total_ru_slots > 0
+                results.ru_utilization.total_utilization = total_used / total_ru_slots;
+                results.ru_utilization.total_success_util = total_success / total_ru_slots;
+            else
+                results.ru_utilization.total_utilization = 0;
+                results.ru_utilization.total_success_util = 0;
+            end
+            
+            % 상세 카운트
+            results.ru_utilization.ra_used_count = ra_used;
+            results.ru_utilization.sa_used_count = obj.sa_tx_count;
+            results.ru_utilization.total_ru_slots = total_ru_slots;
             
             %% BSR 통계
             results.bsr.explicit_count = obj.explicit_bsr_count;

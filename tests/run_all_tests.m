@@ -19,10 +19,16 @@ function run_all_tests()
     
     % 테스트 목록
     tests = {
+        % 단위 테스트
         'test_config'
         'test_sta'
         'test_uora'
         'test_traffic'
+        % 검증 테스트
+        'test_validation_baseline'
+        'test_validation_traffic'
+        'test_validation_metrics'
+        % 통합 테스트
         'test_integration'
     };
     

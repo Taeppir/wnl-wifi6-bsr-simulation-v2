@@ -150,32 +150,47 @@ classdef Simulator < handle
         end
         
         %% ═══════════════════════════════════════════════════
-        %  Time-Slot 루프
+        %  Time-Slot 루프 (TF 주기 기반)
         %  ═══════════════════════════════════════════════════
         
         function results = run_slot_loop(obj)
             total_slots = obj.cfg.total_slots;
             warmup_slots = obj.cfg.warmup_slots;
+            frame_slots = obj.cfg.frame_exchange_slots;
             
             if obj.cfg.verbose >= 1
-                fprintf('  총 슬롯: %d, 워밍업: %d\n', total_slots, warmup_slots);
+                fprintf('  총 슬롯: %d, 워밍업: %d, TF 주기: %d 슬롯\n', ...
+                    total_slots, warmup_slots, frame_slots);
                 progress_interval = ceil(total_slots / 10);
             end
             
-            for slot = 1:total_slots
+            % TF 카운터
+            tf_count = 0;
+            prev_slot = 0;  % 이전 TF 시점
+            
+            slot = 1;  % 첫 TF 시점
+            while slot <= total_slots
                 obj.current_slot = slot;
                 is_warmup = (slot <= warmup_slots);
+                tf_count = tf_count + 1;
+                
+                % ═══════════════════════════════════════════
+                % TF 발생 시점: slot
+                % 처리할 시간 범위: (prev_slot, slot]
+                % ═══════════════════════════════════════════
                 
                 % ───────────────────────────────────────────
                 % Phase 1: 트래픽 도착 처리
+                %   (이전 TF ~ 현재 TF 사이에 도착한 패킷)
                 % ───────────────────────────────────────────
-                obj.process_traffic_arrivals(slot);
+                obj.process_traffic_arrivals(prev_slot, slot);
                 
                 % ───────────────────────────────────────────
                 % Phase 2: T_hold 타이머 만료 체크
+                %   (prev_slot < 만료 시점 <= slot 인 경우 만료)
                 % ───────────────────────────────────────────
                 if obj.cfg.thold_enabled
-                    obj.thold.check_expiry(obj.stas, obj.ap, slot);
+                    obj.thold.check_expiry(obj.stas, obj.ap, prev_slot, slot);
                 end
                 
                 % ───────────────────────────────────────────
@@ -204,45 +219,74 @@ classdef Simulator < handle
                 % ───────────────────────────────────────────
                 if ~is_warmup
                     obj.metrics.collect(slot, success, collided, idle, ...
-                        sa_assignments, obj.stas, obj.ap);
+                        sa_assignments, obj.stas, obj.ap, tf_count);
                 end
                 
                 % 진행 상황 출력
-                if obj.cfg.verbose >= 1 && mod(slot, progress_interval) == 0
-                    fprintf('  진행: %d%% (%d/%d 슬롯)\n', ...
-                        round(slot/total_slots*100), slot, total_slots);
+                if obj.cfg.verbose >= 1 && slot >= progress_interval && ...
+                        mod(slot, progress_interval) < frame_slots
+                    fprintf('  진행: %d%% (슬롯 %d/%d, TF #%d)\n', ...
+                        round(slot/total_slots*100), slot, total_slots, tf_count);
                 end
+                
+                % ═══════════════════════════════════════════
+                % 프레임 교환 완료, 다음 TF 시점으로 이동
+                % ═══════════════════════════════════════════
+                prev_slot = slot;
+                slot = slot + frame_slots;
+            end
+            
+            if obj.cfg.verbose >= 1
+                fprintf('  완료: 총 %d TF 주기 처리\n', tf_count);
             end
             
             % 최종 결과 계산
-            results = obj.metrics.finalize(obj.stas);
+            results = obj.metrics.finalize(obj.stas, tf_count);
+            
+            % T_hold 통계 추가
+            if obj.cfg.thold_enabled
+                thold_stats = obj.thold.get_stats();
+                results.thold = thold_stats;
+            end
         end
         
         %% ═══════════════════════════════════════════════════
-        %  트래픽 도착 처리
+        %  트래픽 도착 처리 (구간 기반)
         %  ═══════════════════════════════════════════════════
         
-        function process_traffic_arrivals(obj, slot)
-            current_time = slot * obj.cfg.slot_duration;
+        function process_traffic_arrivals(obj, prev_slot, current_slot)
+            % (prev_slot, current_slot] 구간에 도착한 패킷 처리
+            prev_time = prev_slot * obj.cfg.slot_duration;
+            current_time = current_slot * obj.cfg.slot_duration;
             
             for i = 1:length(obj.stas)
                 sta = obj.stas(i);
                 
-                % 이 슬롯에 도착한 패킷 확인
+                % 이 구간에 도착한 패킷 확인
                 while sta.next_packet_idx <= sta.num_packets
                     pkt = sta.packets(sta.next_packet_idx);
                     
                     if pkt.arrival_time <= current_time
+                        % 도착 시점을 슬롯으로 변환
+                        arrival_slot = ceil(pkt.arrival_time / obj.cfg.slot_duration);
+                        if arrival_slot <= prev_slot
+                            arrival_slot = prev_slot + 1;  % 최소한 이전 TF 이후
+                        end
+                        
                         % 패킷을 큐에 추가
                         sta.queue_size = sta.queue_size + pkt.size;
                         sta.queue_packets = sta.queue_packets + 1;
-                        pkt.enqueue_slot = slot;
+                        pkt.enqueue_slot = current_slot;  % 현재 TF 시점에 인큐
+                        pkt.arrival_slot = arrival_slot;   % 실제 도착 슬롯
                         sta.packets(sta.next_packet_idx) = pkt;
                         sta.next_packet_idx = sta.next_packet_idx + 1;
                         
                         % T_hold 중에 패킷 도착 처리
+                        % 패킷 도착 슬롯이 T_hold 만료 전이면 히트
                         if obj.cfg.thold_enabled && sta.thold_active
-                            obj.thold.handle_new_packet(sta, obj.ap, slot);
+                            obj.thold.handle_new_packet(sta, obj.ap, arrival_slot, current_slot);
+                            % T_hold hit이면 BSR도 업데이트 (AP가 스케줄링할 수 있도록)
+                            obj.ap.bsr_table(i) = sta.queue_size;
                         end
                     else
                         break;
