@@ -73,13 +73,12 @@ function [passed, failed] = test_traffic()
     %% Test 4: Duty Cycle 계산
     fprintf('  [4] Duty Cycle (rho)... ');
     try
-        mu_on = cfg.mu_on;
-        mu_off = cfg.mu_off;
-        expected_rho = mu_on / (mu_on + mu_off);
+        % rho를 직접 설정하고 mu_off가 자동 계산됨
+        expected_rho = cfg.rho;
+        calculated_rho = cfg.mu_on / (cfg.mu_on + cfg.mu_off);
         
-        % 기본 설정: mu_on=0.05, mu_off=0.10 -> rho = 1/3
-        assert(abs(expected_rho - 1/3) < 0.01, 'rho != 1/3');
-        fprintf('✓ (rho = %.3f)\n', expected_rho);
+        assert(abs(calculated_rho - expected_rho) < 0.001, 'mu_off 자동 계산 오류');
+        fprintf('✓ (rho = %.3f, mu_off = %.3fs)\n', expected_rho, cfg.mu_off);
         passed = passed + 1;
     catch ME
         fprintf('✗ (%s)\n', ME.message);
