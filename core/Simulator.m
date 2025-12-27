@@ -214,7 +214,7 @@ classdef Simulator < handle
                     % ───────────────────────────────────────────
                     % Phase 5: 충돌 검출 및 전송 결과
                     % ───────────────────────────────────────────
-                    [success, collided, idle] = obj.collision.detect( ...
+                    [success, collided, idle, collision_slots] = obj.collision.detect( ...
                         obj.stas, obj.rus, ra_attempts, sa_assignments);
                     
                     % ───────────────────────────────────────────
@@ -227,7 +227,7 @@ classdef Simulator < handle
                     % ───────────────────────────────────────────
                     if ~is_warmup
                         obj.metrics.collect(slot, success, collided, idle, ...
-                            sa_assignments, obj.stas, obj.ap);
+                            sa_assignments, obj.stas, obj.ap, collision_slots);
                     end
                     
                     % 다음 TF 슬롯 설정

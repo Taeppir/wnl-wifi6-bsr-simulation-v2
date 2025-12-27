@@ -11,7 +11,8 @@ classdef MetricsCollector < handle
         
         % UORA (RA-RU)
         ra_success_count        % RA-RU 성공 횟수
-        ra_collision_count      % RA-RU 충돌 횟수
+        ra_collision_count      % RA-RU 충돌에 참여한 STA 수 (누적)
+        ra_collision_slots      % RA-RU 충돌 발생 슬롯 수
         ra_idle_count           % RA-RU 유휴 횟수
         
         % SA-RU
@@ -58,6 +59,7 @@ classdef MetricsCollector < handle
             
             obj.ra_success_count = 0;
             obj.ra_collision_count = 0;
+            obj.ra_collision_slots = 0;
             obj.ra_idle_count = 0;
             
             obj.sa_tx_count = 0;
@@ -83,7 +85,7 @@ classdef MetricsCollector < handle
         %  TF별 수집
         %  ═══════════════════════════════════════════════════
         
-        function collect(obj, slot, success, collided, idle, sa_assignments, stas, ~)
+        function collect(obj, slot, success, collided, idle, sa_assignments, stas, ~, collision_slots)
             obj.total_tf_count = obj.total_tf_count + 1;
             
             % RA-RU 통계
@@ -92,6 +94,7 @@ classdef MetricsCollector < handle
             
             obj.ra_success_count = obj.ra_success_count + ra_success;
             obj.ra_collision_count = obj.ra_collision_count + length(collided);
+            obj.ra_collision_slots = obj.ra_collision_slots + collision_slots;
             obj.ra_idle_count = obj.ra_idle_count + idle.ra;
             
             % SA-RU 통계
@@ -357,23 +360,33 @@ classdef MetricsCollector < handle
             %  ═══════════════════════════════════════════════════
             
             total_ra_attempts = obj.ra_success_count + obj.ra_collision_count;
-            total_ra_outcomes = obj.ra_success_count + obj.ra_collision_count + obj.ra_idle_count;
+            % RA-RU 슬롯 수: success + collision_slots + idle
+            total_ra_slots = obj.ra_success_count + obj.ra_collision_slots + obj.ra_idle_count;
             
-            if total_ra_outcomes > 0
-                results.uora.success_rate = obj.ra_success_count / total_ra_outcomes;
-                results.uora.collision_rate = obj.ra_collision_count / total_ra_outcomes;
-                results.uora.idle_rate = obj.ra_idle_count / total_ra_outcomes;
+            % RA-RU 슬롯 기준 비율 (시스템 관점)
+            if total_ra_slots > 0
+                results.uora.success_rate = obj.ra_success_count / total_ra_slots;
+                results.uora.collision_slot_rate = obj.ra_collision_slots / total_ra_slots;
+                results.uora.idle_rate = obj.ra_idle_count / total_ra_slots;
             else
                 results.uora.success_rate = 0;
-                results.uora.collision_rate = 0;
+                results.uora.collision_slot_rate = 0;
                 results.uora.idle_rate = 0;
             end
             
-            % RA 시도 기준 충돌률 (시도한 것 중 충돌 비율)
+            % 충돌률 (STA 관점): 시도 중 충돌 비율
+            % collision_rate = collision_stas / (success + collision_stas)
             if total_ra_attempts > 0
-                results.uora.collision_per_attempt = obj.ra_collision_count / total_ra_attempts;
+                results.uora.collision_rate = obj.ra_collision_count / total_ra_attempts;
             else
-                results.uora.collision_per_attempt = 0;
+                results.uora.collision_rate = 0;
+            end
+            
+            % 충돌당 평균 참여 STA 수
+            if obj.ra_collision_slots > 0
+                results.uora.avg_collision_size = obj.ra_collision_count / obj.ra_collision_slots;
+            else
+                results.uora.avg_collision_size = 0;
             end
             
             % 패킷당 충돌 횟수 (시스템 전체)
@@ -386,7 +399,9 @@ classdef MetricsCollector < handle
             results.uora.total_attempts = total_ra_attempts;
             results.uora.total_success = obj.ra_success_count;
             results.uora.total_collision = obj.ra_collision_count;
+            results.uora.total_collision_slots = obj.ra_collision_slots;
             results.uora.total_idle = obj.ra_idle_count;
+            results.uora.total_ra_slots = total_ra_slots;
             
             %% ═══════════════════════════════════════════════════
             %  BSR 통계
