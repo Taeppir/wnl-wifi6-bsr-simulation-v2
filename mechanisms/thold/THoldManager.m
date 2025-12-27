@@ -52,11 +52,10 @@ classdef THoldManager < handle
         end
         
         %% ═══════════════════════════════════════════════════
-        %  T_hold 만료 체크 (구간 기반)
+        %  T_hold 만료 체크
         %  ═══════════════════════════════════════════════════
         
-        function check_expiry(obj, stas, ap, prev_slot, current_slot)
-            % (prev_slot, current_slot] 구간에서 만료되는 T_hold 체크
+        function check_expiry(obj, stas, ap, current_slot)
             if ~obj.enabled
                 return;
             end
@@ -64,13 +63,9 @@ classdef THoldManager < handle
             for i = 1:length(stas)
                 sta = stas(i);
                 
-                % T_hold가 활성화되어 있고, 만료 시점이 구간 내에 있는지 확인
-                % prev_slot < thold_expiry <= current_slot
-                if sta.thold_active && ...
-                   sta.thold_expiry > prev_slot && ...
-                   sta.thold_expiry <= current_slot
-                    
+                if sta.thold_active && sta.thold_expiry <= current_slot
                     % T_hold 만료!
+                    
                     if sta.queue_size == 0
                         % 버퍼가 여전히 비어있음 → RA 모드로 전환
                         sta.mode = 0;
@@ -97,31 +92,21 @@ classdef THoldManager < handle
         %  T_hold 중 새 패킷 도착 처리
         %  ═══════════════════════════════════════════════════
         
-        function handle_new_packet(obj, sta, ap, arrival_slot, current_slot)
-            % arrival_slot: 패킷의 실제 도착 슬롯
-            % current_slot: 현재 TF 시점 (처리 시점)
-            
+        function handle_new_packet(obj, sta, ap, current_slot)
             if ~obj.enabled || ~sta.thold_active
                 return;
             end
             
-            % 패킷 도착이 T_hold 만료 전인지 확인
-            % arrival_slot < thold_expiry 이면 Hit!
-            if arrival_slot < sta.thold_expiry
-                % T_hold Hit! SA 모드 유지, 타이머 해제
-                sta.thold_active = false;
-                sta.thold_expiry = 0;
-                % sta.mode는 이미 1 (SA)
-                
-                % AP 측 T_hold도 해제
-                ap.end_thold(sta.id);
-                
-                obj.hits = obj.hits + 1;
-            else
-                % 패킷 도착이 T_hold 만료 후 → Miss
-                % (이 경우는 check_expiry에서 이미 RA 모드로 전환됨)
-                % 여기 도달하면 안 됨 (thold_active가 false일 것)
-            end
+            % T_hold Hit! SA 모드 유지, 타이머 해제
+            sta.thold_active = false;
+            sta.thold_expiry = 0;
+            % sta.mode는 이미 1 (SA)
+            
+            % AP 측 T_hold도 해제 (실제로는 다음 전송에서 Implicit BSR로 알게 됨)
+            % 여기서는 즉시 해제로 단순화
+            ap.end_thold(sta.id);
+            
+            obj.hits = obj.hits + 1;
         end
         
         %% ═══════════════════════════════════════════════════

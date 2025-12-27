@@ -53,7 +53,6 @@ classdef TrafficGenerator < handle
                     'idx', num2cell(1:num_pkts)', ...
                     'size', num2cell(obj.cfg.mpdu_size * ones(num_pkts, 1)), ...
                     'arrival_time', num2cell(zeros(num_pkts, 1)), ...
-                    'arrival_slot', num2cell(zeros(num_pkts, 1)), ...
                     'enqueue_slot', num2cell(zeros(num_pkts, 1)), ...
                     'completion_slot', num2cell(zeros(num_pkts, 1)), ...
                     'completed', num2cell(false(num_pkts, 1)), ...
@@ -78,34 +77,31 @@ classdef TrafficGenerator < handle
             sim_time = obj.cfg.simulation_time;
             pkt_size = obj.cfg.mpdu_size;
             
-            % STA별 예상 패킷 수 (여유 있게 3배)
-            expected_packets = ceil(rate * sim_time * 3);
-            expected_packets = min(expected_packets, obj.cfg.max_packets);
-            
             for i = 1:length(stas)
                 current_time = 0;
-                
-                % 미리 할당
-                packets = repmat(struct('idx', 0, 'size', 0, 'arrival_time', 0, ...
-                    'arrival_slot', 0, 'enqueue_slot', 0, 'completion_slot', 0, ...
-                    'completed', false, 'delay_slots', 0), expected_packets, 1);
+                packets = [];
                 idx = 0;
                 
-                while current_time < sim_time && idx < expected_packets
+                while current_time < sim_time
                     inter_arrival = -log(rand()) / rate;
                     current_time = current_time + inter_arrival;
                     
                     if current_time < sim_time
                         idx = idx + 1;
-                        packets(idx).idx = idx;
-                        packets(idx).size = pkt_size;
-                        packets(idx).arrival_time = current_time;
+                        pkt.idx = idx;
+                        pkt.size = pkt_size;
+                        pkt.arrival_time = current_time;
+                        pkt.enqueue_slot = 0;
+                        pkt.completion_slot = 0;
+                        pkt.completed = false;
+                        pkt.delay_slots = 0;
+                        
+                        packets = [packets; pkt];
                     end
                 end
                 
-                % 실제 사용한 패킷만 저장
-                stas(i).packets = packets(1:idx);
-                stas(i).num_packets = idx;
+                stas(i).packets = packets;
+                stas(i).num_packets = length(packets);
                 stas(i).next_packet_idx = 1;
             end
         end
@@ -126,38 +122,34 @@ classdef TrafficGenerator < handle
             k_on = mu_on * (alpha - 1) / alpha;
             k_off = mu_off * (alpha - 1) / alpha;
             
-            % STA별 예상 패킷 수 (여유 있게 3배)
-            rho = mu_on / (mu_on + mu_off);
-            expected_packets = ceil(rho * lambda * sim_time * 3);
-            expected_packets = min(expected_packets, obj.cfg.max_packets);
-            
             for i = 1:length(stas)
                 current_time = 0;
-                
-                % 미리 할당
-                packets = repmat(struct('idx', 0, 'size', 0, 'arrival_time', 0, ...
-                    'arrival_slot', 0, 'enqueue_slot', 0, 'completion_slot', 0, ...
-                    'completed', false, 'delay_slots', 0), expected_packets, 1);
+                packets = [];
                 idx = 0;
                 is_on = false;  % Off 상태로 시작
                 
-                while current_time < sim_time && idx < expected_packets
+                while current_time < sim_time
                     if is_on
                         % On Period
                         on_duration = obj.sample_pareto(k_on, alpha);
                         on_end = current_time + on_duration;
                         
                         % On 기간 동안 Poisson 도착
-                        while current_time < on_end && current_time < sim_time && idx < expected_packets
+                        while current_time < on_end && current_time < sim_time
                             inter_arrival = -log(rand()) / lambda;
                             arrival_time = current_time + inter_arrival;
                             
                             if arrival_time < on_end && arrival_time < sim_time
                                 idx = idx + 1;
-                                packets(idx).idx = idx;
-                                packets(idx).size = pkt_size;
-                                packets(idx).arrival_time = arrival_time;
+                                pkt.idx = idx;
+                                pkt.size = pkt_size;
+                                pkt.arrival_time = arrival_time;
+                                pkt.enqueue_slot = 0;
+                                pkt.completion_slot = 0;
+                                pkt.completed = false;
+                                pkt.delay_slots = 0;
                                 
+                                packets = [packets; pkt];
                                 current_time = arrival_time;
                             else
                                 break;
@@ -174,9 +166,8 @@ classdef TrafficGenerator < handle
                     end
                 end
                 
-                % 실제 사용한 패킷만 저장
-                stas(i).packets = packets(1:idx);
-                stas(i).num_packets = idx;
+                stas(i).packets = packets;
+                stas(i).num_packets = length(packets);
                 stas(i).next_packet_idx = 1;
             end
         end

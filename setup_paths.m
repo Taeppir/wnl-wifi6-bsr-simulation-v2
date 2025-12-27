@@ -23,7 +23,6 @@ function setup_paths()
         'traffic'
         'metrics'
         'experiments'
-        'analysis'
         'utils'
         'tests'
     };
