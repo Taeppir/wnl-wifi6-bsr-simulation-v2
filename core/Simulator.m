@@ -150,21 +150,31 @@ classdef Simulator < handle
         end
         
         %% ═══════════════════════════════════════════════════
-        %  Time-Slot 루프
+        %  Time-Slot 루프 (TF 주기 기반)
         %  ═══════════════════════════════════════════════════
         
         function results = run_slot_loop(obj)
             total_slots = obj.cfg.total_slots;
             warmup_slots = obj.cfg.warmup_slots;
+            tf_period = obj.cfg.frame_exchange_slots;  % TF 주기 (슬롯 단위)
+            
+            % 다음 TF 슬롯 (첫 TF는 슬롯 1에서 시작)
+            next_tf_slot = 1;
+            num_tfs = 0;  % TF 횟수 카운터
             
             if obj.cfg.verbose >= 1
-                fprintf('  총 슬롯: %d, 워밍업: %d\n', total_slots, warmup_slots);
+                fprintf('  총 슬롯: %d, 워밍업: %d, TF 주기: %d 슬롯 (%.2f ms)\n', ...
+                    total_slots, warmup_slots, tf_period, tf_period * obj.cfg.slot_duration * 1000);
                 progress_interval = ceil(total_slots / 10);
             end
             
             for slot = 1:total_slots
                 obj.current_slot = slot;
                 is_warmup = (slot <= warmup_slots);
+                
+                % ═══════════════════════════════════════════════════
+                % 매 슬롯마다 처리 (9μs 단위)
+                % ═══════════════════════════════════════════════════
                 
                 % ───────────────────────────────────────────
                 % Phase 1: 트래픽 도착 처리
@@ -173,45 +183,61 @@ classdef Simulator < handle
                 
                 % ───────────────────────────────────────────
                 % Phase 2: T_hold 타이머 만료 체크
+                % (패킷 도착 직후 체크 → 같은 슬롯 도착 시 Hit 판정)
                 % ───────────────────────────────────────────
                 if obj.cfg.thold_enabled
                     obj.thold.check_expiry(obj.stas, obj.ap, slot);
                 end
                 
-                % ───────────────────────────────────────────
-                % Phase 3: SA-RU 스케줄링 (BSR 기반)
-                % ───────────────────────────────────────────
-                sa_assignments = obj.schedule_sa_ru();
+                % ═══════════════════════════════════════════════════
+                % TF 주기마다 처리 (전송 기회)
+                % ═══════════════════════════════════════════════════
                 
-                % ───────────────────────────────────────────
-                % Phase 4: RA-RU 접근 (UORA)
-                % ───────────────────────────────────────────
-                ra_attempts = obj.process_uora();
-                
-                % ───────────────────────────────────────────
-                % Phase 5: 충돌 검출 및 전송 결과
-                % ───────────────────────────────────────────
-                [success, collided, idle] = obj.collision.detect( ...
-                    obj.stas, obj.rus, ra_attempts, sa_assignments);
-                
-                % ───────────────────────────────────────────
-                % Phase 6: 전송 결과 처리
-                % ───────────────────────────────────────────
-                obj.process_tx_results(success, collided, slot);
-                
-                % ───────────────────────────────────────────
-                % Phase 7: 메트릭 수집
-                % ───────────────────────────────────────────
-                if ~is_warmup
-                    obj.metrics.collect(slot, success, collided, idle, ...
-                        sa_assignments, obj.stas, obj.ap);
+                if slot == next_tf_slot
+                    num_tfs = num_tfs + 1;
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 3: SA-RU 스케줄링 (BSR 기반)
+                    % ───────────────────────────────────────────
+                    sa_assignments = obj.schedule_sa_ru();
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 4: RA-RU 접근 (UORA)
+                    % ───────────────────────────────────────────
+                    ra_attempts = obj.process_uora();
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 5: 충돌 검출 및 전송 결과
+                    % ───────────────────────────────────────────
+                    [success, collided, idle] = obj.collision.detect( ...
+                        obj.stas, obj.rus, ra_attempts, sa_assignments);
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 6: 전송 결과 처리
+                    % ───────────────────────────────────────────
+                    obj.process_tx_results(success, collided, slot);
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 7: 메트릭 수집
+                    % ───────────────────────────────────────────
+                    if ~is_warmup
+                        obj.metrics.collect(slot, success, collided, idle, ...
+                            sa_assignments, obj.stas, obj.ap);
+                    end
+                    
+                    % 다음 TF 슬롯 설정
+                    next_tf_slot = slot + tf_period;
                 end
                 
                 % 진행 상황 출력
                 if obj.cfg.verbose >= 1 && mod(slot, progress_interval) == 0
-                    fprintf('  진행: %d%% (%d/%d 슬롯)\n', ...
-                        round(slot/total_slots*100), slot, total_slots);
+                    fprintf('  진행: %d%% (%d/%d 슬롯, TF %d회)\n', ...
+                        round(slot/total_slots*100), slot, total_slots, num_tfs);
                 end
+            end
+            
+            if obj.cfg.verbose >= 1
+                fprintf('  완료: 총 %d TF 전송\n', num_tfs);
             end
             
             % 최종 결과 계산

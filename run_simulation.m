@@ -89,6 +89,9 @@ function print_header(cfg)
     fprintf('  시뮬레이션 시간: %.1f초 (워밍업: %.1f초)\n', ...
         cfg.simulation_time, cfg.warmup_time);
     fprintf('  총 슬롯 수: %d (워밍업: %d)\n', cfg.total_slots, cfg.warmup_slots);
+    fprintf('  TF 주기: %d 슬롯 (%.2f ms)\n', ...
+        cfg.frame_exchange_slots, cfg.frame_exchange_slots * cfg.slot_duration * 1000);
+    fprintf('  예상 TF 횟수: ~%d회\n', floor(cfg.total_slots / cfg.frame_exchange_slots));
     fprintf('  STA 수: %d\n', cfg.num_stas);
     fprintf('  RA-RU: %d, SA-RU: %d\n', cfg.num_ru_ra, cfg.num_ru_sa);
     fprintf('  OCW: [%d, %d]\n', cfg.ocw_min, cfg.ocw_max);
@@ -126,6 +129,7 @@ function print_results(results, cfg, elapsed)
     fprintf('  실제 소요 시간: %.2f초\n', elapsed);
     fprintf('  시뮬레이션 시간: %.2f초\n', cfg.simulation_time);
     fprintf('  가속비: %.1fx\n', cfg.simulation_time / elapsed);
+    fprintf('  총 TF 횟수: %d회 (주기: %.2f ms)\n', results.tf.count, results.tf.period_ms);
     
     fprintf('\n[패킷 통계]\n');
     fprintf('  생성: %d개\n', results.packets.generated);

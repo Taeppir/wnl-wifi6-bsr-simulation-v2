@@ -102,8 +102,10 @@ classdef THoldManager < handle
             sta.thold_expiry = 0;
             % sta.mode는 이미 1 (SA)
             
-            % AP 측 T_hold도 해제 (실제로는 다음 전송에서 Implicit BSR로 알게 됨)
-            % 여기서는 즉시 해제로 단순화
+            % ★ 핵심: BSR 테이블 업데이트! (이게 없으면 AP가 스케줄링 안 함)
+            ap.bsr_table(sta.id) = sta.queue_size;
+            
+            % AP 측 T_hold도 해제
             ap.end_thold(sta.id);
             
             obj.hits = obj.hits + 1;
