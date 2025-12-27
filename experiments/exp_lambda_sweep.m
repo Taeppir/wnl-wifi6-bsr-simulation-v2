@@ -15,7 +15,7 @@ addpath(genpath(pwd));
 
 %% 실험 설정
 lambda_values = [20, 50, 100];  % pkt/s
-num_runs = 10;
+num_runs = 1;
 
 % 고정 파라미터
 sim_time = 10.0;
