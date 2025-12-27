@@ -197,6 +197,11 @@ classdef Simulator < handle
                     num_tfs = num_tfs + 1;
                     
                     % ───────────────────────────────────────────
+                    % Phase 2.5: 첫 TF 슬롯 기록 (지연 분해용)
+                    % ───────────────────────────────────────────
+                    obj.record_first_tf(slot);
+                    
+                    % ───────────────────────────────────────────
                     % Phase 3: SA-RU 스케줄링 (BSR 기반)
                     % ───────────────────────────────────────────
                     sa_assignments = obj.schedule_sa_ru();
@@ -242,6 +247,18 @@ classdef Simulator < handle
             
             % 최종 결과 계산
             results = obj.metrics.finalize(obj.stas);
+            
+            % T_hold 통계 추가
+            if obj.cfg.thold_enabled
+                thold_stats = obj.thold.get_stats();
+                results.thold.activations = thold_stats.activations;
+                results.thold.hits = thold_stats.hits;
+                results.thold.expirations = thold_stats.expirations;
+                results.thold.hit_rate = thold_stats.hit_rate;
+                results.thold.uora_avoided = thold_stats.uora_avoided;
+                results.thold.wasted_slots = thold_stats.wasted_slots;
+                results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
+            end
         end
         
         %% ═══════════════════════════════════════════════════
@@ -263,13 +280,34 @@ classdef Simulator < handle
                         sta.queue_size = sta.queue_size + pkt.size;
                         sta.queue_packets = sta.queue_packets + 1;
                         pkt.enqueue_slot = slot;
-                        sta.packets(sta.next_packet_idx) = pkt;
-                        sta.next_packet_idx = sta.next_packet_idx + 1;
+                        
+                        % ═══════════════════════════════════════════
+                        % 지연 분해용: 도착 시점 상태 기록
+                        % ═══════════════════════════════════════════
                         
                         % T_hold 중에 패킷 도착 처리
                         if obj.cfg.thold_enabled && sta.thold_active
                             obj.thold.handle_new_packet(sta, obj.ap, slot);
+                            % T_hold Hit! → SA 모드 유지, UORA 스킵
+                            pkt.thold_hit = true;
+                            pkt.sa_start_slot = slot;
+                            pkt.uora_start_slot = 0;  % UORA 안 거침
+                            pkt.uora_end_slot = 0;
+                        elseif sta.mode == 1
+                            % 이미 SA 모드 (큐에 다른 패킷이 있어서)
+                            pkt.sa_start_slot = slot;
+                            pkt.uora_start_slot = 0;
+                            pkt.uora_end_slot = 0;
+                            pkt.thold_hit = false;
+                        else
+                            % RA 모드 → UORA 경쟁 필요
+                            pkt.uora_start_slot = slot;
+                            pkt.sa_start_slot = 0;
+                            pkt.thold_hit = false;
                         end
+                        
+                        sta.packets(sta.next_packet_idx) = pkt;
+                        sta.next_packet_idx = sta.next_packet_idx + 1;
                     else
                         break;
                     end
@@ -351,8 +389,8 @@ classdef Simulator < handle
                 
                 sta = obj.stas(sta_idx);
                 
-                % 패킷 완료 처리
-                [sta, completed_pkt] = obj.complete_packet(sta, slot);
+                % 패킷 완료 처리 (tx_type 전달)
+                [sta, completed_pkt] = obj.complete_packet(sta, slot, tx_type);
                 
                 % BSR 업데이트
                 if strcmp(tx_type, 'ra')
@@ -360,8 +398,19 @@ classdef Simulator < handle
                     obj.ap.bsr_table(sta_idx) = sta.queue_size;
                     obj.metrics.record_explicit_bsr();
                     
+                    % RA 성공 후 큐에 남은 패킷들의 SA 모드 진입 기록
                     if sta.queue_size > 0
                         sta.mode = 1;  % SA 모드로 전환
+                        % 큐에 있는 패킷들의 sa_start_slot 기록
+                        for j = 1:sta.num_packets
+                            if sta.packets(j).enqueue_slot > 0 && ~sta.packets(j).completed
+                                if sta.packets(j).sa_start_slot == 0
+                                    sta.packets(j).sa_start_slot = slot;
+                                    % UORA 종료 시점도 기록
+                                    sta.packets(j).uora_end_slot = slot;
+                                end
+                            end
+                        end
                     else
                         % 버퍼 비어있으면 T_hold 시작
                         if obj.cfg.thold_enabled
@@ -412,7 +461,7 @@ classdef Simulator < handle
         %  패킷 완료 처리
         %  ═══════════════════════════════════════════════════
         
-        function [sta, pkt] = complete_packet(obj, sta, slot)
+        function [sta, pkt] = complete_packet(obj, sta, slot, tx_type)
             % 큐에서 가장 오래된 패킷 완료
             pkt = [];
             
@@ -424,6 +473,52 @@ classdef Simulator < handle
                         pkt.completion_slot = slot;
                         pkt.completed = true;
                         pkt.delay_slots = slot - pkt.enqueue_slot;
+                        
+                        % 전송 타입 기록
+                        pkt.tx_type = tx_type;
+                        
+                        % ═══════════════════════════════════════════
+                        % 지연 분해 계산
+                        % ═══════════════════════════════════════════
+                        
+                        % Initial Wait: 패킷 도착 → 첫 TF
+                        if pkt.first_tf_slot > 0
+                            pkt.initial_wait_slots = pkt.first_tf_slot - pkt.enqueue_slot;
+                        else
+                            pkt.initial_wait_slots = 0;
+                        end
+                        
+                        % UORA Contention: 첫 TF → UORA 성공 (RA 전송인 경우만)
+                        if strcmp(tx_type, 'ra')
+                            % RA 전송: UORA 경쟁을 거침
+                            pkt.uora_end_slot = slot;
+                            if pkt.first_tf_slot > 0
+                                pkt.uora_contention_slots = slot - pkt.first_tf_slot;
+                            else
+                                pkt.uora_contention_slots = slot - pkt.enqueue_slot - pkt.initial_wait_slots;
+                            end
+                            pkt.sa_wait_slots = 0;  % SA를 거치지 않음
+                        else
+                            % SA 전송
+                            if pkt.uora_start_slot > 0 && pkt.uora_end_slot > 0
+                                % UORA를 거쳐서 SA로 온 경우
+                                pkt.uora_contention_slots = pkt.uora_end_slot - pkt.first_tf_slot;
+                                if pkt.uora_contention_slots < 0
+                                    pkt.uora_contention_slots = 0;
+                                end
+                            else
+                                % 처음부터 SA였거나 T_hold hit
+                                pkt.uora_contention_slots = 0;
+                            end
+                            
+                            % SA Scheduling Wait: SA 진입 → 전송 완료
+                            if pkt.sa_start_slot > 0
+                                pkt.sa_wait_slots = slot - pkt.sa_start_slot;
+                            else
+                                pkt.sa_wait_slots = 0;
+                            end
+                        end
+                        
                         sta.packets(i) = pkt;
                         
                         % 큐 업데이트
@@ -434,6 +529,28 @@ classdef Simulator < handle
                         break;
                     end
                 end
+            end
+        end
+        
+        %% ═══════════════════════════════════════════════════
+        %  첫 TF 슬롯 기록 (지연 분해용)
+        %  ═══════════════════════════════════════════════════
+        
+        function record_first_tf(obj, slot)
+            % 큐에 있는 패킷들 중 first_tf_slot이 0인 것들에 기록
+            for i = 1:length(obj.stas)
+                sta = obj.stas(i);
+                
+                for j = 1:sta.num_packets
+                    pkt = sta.packets(j);
+                    % 큐에 있고 (enqueue_slot > 0), 완료되지 않고, 첫 TF 미기록
+                    if pkt.enqueue_slot > 0 && ~pkt.completed && pkt.first_tf_slot == 0
+                        pkt.first_tf_slot = slot;
+                        sta.packets(j) = pkt;
+                    end
+                end
+                
+                obj.stas(i) = sta;
             end
         end
     end

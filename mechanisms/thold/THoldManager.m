@@ -12,6 +12,7 @@ classdef THoldManager < handle
         activations     % T_hold 발동 횟수
         hits            % T_hold 중 패킷 도착 횟수 (적중)
         expirations     % T_hold 만료 횟수 (미적중)
+        wasted_slots    % 낭비된 슬롯 (만료 시 전체 T_hold 기간)
     end
     
     methods
@@ -27,6 +28,7 @@ classdef THoldManager < handle
             obj.activations = 0;
             obj.hits = 0;
             obj.expirations = 0;
+            obj.wasted_slots = 0;
         end
         
         %% ═══════════════════════════════════════════════════
@@ -77,6 +79,9 @@ classdef THoldManager < handle
                         ap.end_thold(i);
                         
                         obj.expirations = obj.expirations + 1;
+                        
+                        % 낭비된 슬롯 기록 (전체 T_hold 기간)
+                        obj.wasted_slots = obj.wasted_slots + obj.thold_slots;
                     else
                         % 버퍼에 데이터 있음 (이미 hit 처리됨)
                         sta.thold_active = false;
@@ -119,6 +124,7 @@ classdef THoldManager < handle
             stats.activations = obj.activations;
             stats.hits = obj.hits;
             stats.expirations = obj.expirations;
+            stats.wasted_slots = obj.wasted_slots;
             
             if obj.activations > 0
                 stats.hit_rate = obj.hits / obj.activations;

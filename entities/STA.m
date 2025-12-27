@@ -117,6 +117,37 @@ classdef STA < handle
             pkt.completion_slot = 0;
             pkt.completed = false;
             pkt.delay_slots = 0;
+            
+            %% ═══════════════════════════════════════════════════
+            %  지연 분해용 타이밍 필드 (Delay Decomposition)
+            %  ═══════════════════════════════════════════════════
+            
+            % 첫 TF 슬롯 (Initial Wait 계산용)
+            pkt.first_tf_slot = 0;
+            
+            % UORA 경쟁 구간 (RA 모드에서만 해당)
+            pkt.uora_start_slot = 0;    % UORA 경쟁 시작 슬롯
+            pkt.uora_end_slot = 0;      % UORA 성공 슬롯
+            
+            % SA 스케줄링 구간
+            pkt.sa_start_slot = 0;      % SA 모드 진입 슬롯
+            
+            % 전송 정보
+            pkt.tx_type = '';           % 'ra' | 'sa' | 'sa_thold'
+            pkt.thold_hit = false;      % T_hold Hit으로 UORA 회피 여부
+            
+            %% ═══════════════════════════════════════════════════
+            %  분해된 지연 값 (슬롯 단위, 완료 시 계산)
+            %  ═══════════════════════════════════════════════════
+            
+            % Initial Wait: 패킷 도착 → 첫 TF
+            pkt.initial_wait_slots = 0;
+            
+            % UORA Contention: 첫 TF → UORA 성공 (RA 모드 경유 시)
+            pkt.uora_contention_slots = 0;
+            
+            % SA Scheduling Wait: SA 진입 → 전송 완료
+            pkt.sa_wait_slots = 0;
         end
     end
 end
