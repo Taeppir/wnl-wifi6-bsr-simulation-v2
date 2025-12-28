@@ -207,6 +207,60 @@ classdef Simulator < handle
                     sa_assignments = obj.schedule_sa_ru();
                     
                     % ───────────────────────────────────────────
+                    % Phase 3.5: T_hold Hit/Phantom 판정
+                    % SA 할당받은 T_hold STA의 버퍼 확인
+                    % 
+                    % Note: 실제로 AP는 TF 끝에 전송 결과로 알게 됨.
+                    %       같은 TF 주기 내 일이라 여기서 처리해도 결과 동일.
+                    % ───────────────────────────────────────────
+                    valid_sa = struct('sta_idx', {}, 'ru_idx', {});
+                    phantom_count = 0;
+                    hit_count = 0;
+                    
+                    for i = 1:length(sa_assignments)
+                        sta_idx = sa_assignments(i).sta_idx;
+                        sta = obj.stas(sta_idx);
+                        
+                        if sta.queue_size > 0
+                            % 실제 전송할 데이터 있음
+                            valid_sa(end+1) = sa_assignments(i);
+                            
+                            % T_hold Hit 판정: T_hold 중에 SA 할당받아서 전송
+                            if sta.thold_active
+                                hit_count = hit_count + 1;
+                                sta.thold_active = false;
+                                sta.thold_expiry = 0;
+                                obj.ap.end_thold(sta_idx);
+                                % mode=1 유지 (SA 전송 후 상태는 process_tx_results에서)
+                            end
+                        else
+                            % Phantom! T_hold 중인데 패킷 없음
+                            % → SA-RU 1개가 이번 TF에서 낭비됨
+                            phantom_count = phantom_count + 1;
+                            
+                            % Phantom 발생 시: T_hold 상태 해제
+                            if sta.thold_active
+                                sta.thold_active = false;
+                                sta.thold_expiry = 0;
+                                sta.mode = 0;  % RA 모드로 전환
+                                obj.ap.end_thold(sta_idx);
+                            end
+                        end
+                        
+                        obj.stas(sta_idx) = sta;
+                    end
+                    
+                    % 메트릭에 Hit/Phantom 기록
+                    if ~is_warmup
+                        obj.metrics.record_phantom(phantom_count);
+                    end
+                    
+                    % T_hold Hit 카운트 (THoldManager에 직접 추가)
+                    if obj.cfg.thold_enabled
+                        obj.thold.hits = obj.thold.hits + hit_count;
+                    end
+                    
+                    % ───────────────────────────────────────────
                     % Phase 4: RA-RU 접근 (UORA)
                     % ───────────────────────────────────────────
                     ra_attempts = obj.process_uora();
@@ -215,7 +269,7 @@ classdef Simulator < handle
                     % Phase 5: 충돌 검출 및 전송 결과
                     % ───────────────────────────────────────────
                     [success, collided, idle, collision_slots] = obj.collision.detect( ...
-                        obj.stas, obj.rus, ra_attempts, sa_assignments);
+                        obj.stas, obj.rus, ra_attempts, valid_sa);
                     
                     % ───────────────────────────────────────────
                     % Phase 6: 전송 결과 처리
@@ -258,6 +312,7 @@ classdef Simulator < handle
                 results.thold.uora_avoided = thold_stats.uora_avoided;
                 results.thold.wasted_slots = thold_stats.wasted_slots;
                 results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
+                results.thold.phantom_count = obj.metrics.thold_phantom_count;
             end
         end
         
@@ -322,14 +377,18 @@ classdef Simulator < handle
         %  ═══════════════════════════════════════════════════
         
         function assignments = schedule_sa_ru(obj)
-            % SA 모드 STA 중 BSR > 0인 STA를 찾아 SA-RU 할당
+            % SA 모드 STA 중 BSR > 0 또는 T_hold 중인 STA를 SA-RU 할당
+            % T_hold 중인 STA는 BSR=0이어도 할당 (Phantom 가능성)
             assignments = struct('sta_idx', {}, 'ru_idx', {});
             
             sa_candidates = [];
             for i = 1:length(obj.stas)
                 if obj.stas(i).mode == 1  % SA 모드
                     bsr_value = obj.ap.bsr_table(i);
-                    if bsr_value > 0
+                    is_thold = obj.stas(i).thold_active;
+                    
+                    % BSR > 0 이거나 T_hold 중이면 SA 후보
+                    if bsr_value > 0 || is_thold
                         sa_candidates(end+1) = i;
                     end
                 end

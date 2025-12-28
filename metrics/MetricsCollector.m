@@ -38,6 +38,7 @@ classdef MetricsCollector < handle
         
         %% T_hold 추가 지표
         thold_wasted_slots      % T_hold 만료로 낭비된 슬롯
+        thold_phantom_count     % T_hold로 인한 Phantom (빈 SA 할당) 횟수
     end
     
     methods
@@ -79,6 +80,7 @@ classdef MetricsCollector < handle
             obj.per_sta_bytes = zeros(obj.cfg.num_stas, 1);
             
             obj.thold_wasted_slots = 0;
+            obj.thold_phantom_count = 0;
         end
         
         %% ═══════════════════════════════════════════════════
@@ -127,6 +129,13 @@ classdef MetricsCollector < handle
         
         function record_implicit_bsr(obj)
             obj.implicit_bsr_count = obj.implicit_bsr_count + 1;
+        end
+        
+        function record_phantom(obj, count)
+            % T_hold로 인한 Phantom (빈 SA 할당) 기록
+            obj.thold_phantom_count = obj.thold_phantom_count + count;
+            % Phantom은 SA idle로도 카운트
+            obj.sa_idle_count = obj.sa_idle_count + count;
         end
         
         %% ═══════════════════════════════════════════════════
@@ -428,6 +437,7 @@ classdef MetricsCollector < handle
             results.thold.wasted_slots = obj.thold_wasted_slots;
             results.thold.wasted_ms = obj.thold_wasted_slots * obj.cfg.slot_duration * 1000;
             results.thold.uora_avoided = 0;
+            results.thold.phantom_count = obj.thold_phantom_count;
             
             %% ═══════════════════════════════════════════════════
             %  TF 통계

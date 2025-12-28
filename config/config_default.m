@@ -8,8 +8,8 @@ function cfg = config_default()
     %  시뮬레이션 제어
     %  ═══════════════════════════════════════════════════
     
-    cfg.simulation_time = 60.0;      % 시뮬레이션 시간 (초)
-    cfg.warmup_time = 1.0;           % 워밍업 시간 (초)
+    cfg.simulation_time = 30.0;      % 시뮬레이션 시간 (초)
+    cfg.warmup_time = 0.0;           % 워밍업 시간 (초)
     cfg.verbose = 1;                 % 출력 레벨 (0: 없음, 1: 기본, 2: 상세)
     cfg.seed = 1234;                 % 랜덤 시드
     
