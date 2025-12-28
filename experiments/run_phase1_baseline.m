@@ -19,12 +19,13 @@ if ~exist(fullfile(results_dir, 'summary'), 'dir'), mkdir(fullfile(results_dir, 
 %% 실험 설정
 sta_list = [20, 40, 60];
 rho_list = [0.1, 0.3, 0.5];
+num_runs = 3;  % 반복 횟수
 
 sim_time = 30.0;
 mu_on = 0.05;  % 50ms
 lambda = 50;
 
-total_exp = length(sta_list) * length(rho_list);
+total_exp = length(sta_list) * length(rho_list) * num_runs;
 exp_count = 0;
 phase_results = [];
 
@@ -50,51 +51,56 @@ total_start = tic;
 
 for si = 1:length(sta_list)
     for ri = 1:length(rho_list)
-        exp_count = exp_count + 1;
-        
-        sta = sta_list(si);
-        rho = rho_list(ri);
-        mu_off = mu_on * (1 - rho) / rho;
-        
-        exp_id = sprintf('B-%02d', exp_count);
-        
-        fprintf('[%d/%d] %s: STA=%d, rho=%.1f (mu_off=%.0fms)... ', ...
-            exp_count, total_exp, exp_id, sta, rho, mu_off*1000);
-        
-        % 설정
-        cfg = config_default();
-        cfg.simulation_time = sim_time;
-        cfg.warmup_time = 2.0;
-        cfg.num_stas = sta;
-        cfg.rho = rho;
-        cfg.mu_on = mu_on;
-        cfg.mu_off = mu_off;
-        cfg.lambda = lambda;
-        cfg.thold_enabled = false;
-        cfg.thold_value = 0;
-        cfg.verbose = 0;
-        cfg.seed = 10000 + exp_count;
-        
-        % 실행
-        exp_start = tic;
-        results = run_simulation(cfg);
-        elapsed = toc(exp_start);
-        
-        fprintf('완료 (%.1fs) - Delay: %.1fms, Collision: %.1f%%, Complete: %.1f%%\n', ...
-            elapsed, results.delay.mean_ms, results.uora.collision_rate * 100, ...
-            results.packets.completion_rate * 100);
-        
-        % 메타 정보
-        results.exp_id = exp_id;
-        results.phase = 1;
-        results.config = cfg;
-        
-        % 저장
-        filename = sprintf('%s_STA%d_rho%.1f.mat', exp_id, sta, rho);
-        save(fullfile(phase_dir, filename), 'results');
-        
-        % 요약
-        phase_results = [phase_results; summarize_results(results, cfg)];
+        for run = 1:num_runs
+            exp_count = exp_count + 1;
+            
+            sta = sta_list(si);
+            rho = rho_list(ri);
+            mu_off = mu_on * (1 - rho) / rho;
+            
+            exp_id = sprintf('B-%02d-R%d', (si-1)*length(rho_list) + ri, run);
+            
+            fprintf('[%d/%d] %s: STA=%d, rho=%.1f, run=%d... ', ...
+                exp_count, total_exp, exp_id, sta, rho, run);
+            
+            % 설정
+            cfg = config_default();
+            cfg.simulation_time = sim_time;
+            cfg.warmup_time = 2.0;
+            cfg.num_stas = sta;
+            cfg.rho = rho;
+            cfg.mu_on = mu_on;
+            cfg.mu_off = mu_off;
+            cfg.lambda = lambda;
+            cfg.thold_enabled = false;
+            cfg.thold_value = 0;
+            cfg.verbose = 0;
+            cfg.seed = 10000 + exp_count;
+            
+            % 실행
+            exp_start = tic;
+            results = run_simulation(cfg);
+            elapsed = toc(exp_start);
+            
+            fprintf('완료 (%.1fs) - Delay: %.1fms, Collision: %.1f%%, Complete: %.1f%%\n', ...
+                elapsed, results.delay.mean_ms, results.uora.collision_rate * 100, ...
+                results.packets.completion_rate * 100);
+            
+            % 메타 정보
+            results.exp_id = exp_id;
+            results.phase = 1;
+            results.run = run;
+            results.config = cfg;
+            
+            % 저장
+            filename = sprintf('%s_STA%d_rho%.1f_run%d.mat', exp_id, sta, rho, run);
+            save(fullfile(phase_dir, filename), 'results');
+            
+            % 요약
+            summary = summarize_results(results, cfg);
+            summary.run = run;
+            phase_results = [phase_results; summary];
+        end
     end
 end
 

@@ -20,6 +20,7 @@ if ~exist(fullfile(results_dir, 'summary'), 'dir'), mkdir(fullfile(results_dir, 
 %% 실험 설정
 sta_list = [20, 40, 60];
 thold_list = [30, 50, 70];  % ms
+num_runs = 3;  % 반복 횟수
 
 rho = 0.5;  % 고정
 sim_time = 30.0;
@@ -27,7 +28,7 @@ mu_on = 0.05;  % 50ms
 mu_off = mu_on * (1 - rho) / rho;  % 50ms
 lambda = 50;
 
-total_exp = length(sta_list) * length(thold_list);
+total_exp = length(sta_list) * length(thold_list) * num_runs;
 exp_count = 0;
 phase_results = [];
 
@@ -45,52 +46,55 @@ total_start = tic;
 
 for si = 1:length(sta_list)
     for ti = 1:length(thold_list)
-        exp_count = exp_count + 1;
-        
-        sta = sta_list(si);
-        thold_ms = thold_list(ti);
-        coverage = thold_ms / (mu_off * 1000) * 100;
-        
-        exp_id = sprintf('T-%02d', exp_count);
-        
-        fprintf('[%d/%d] %s: STA=%d, T_hold=%dms (%.0f%% coverage)... ', ...
-            exp_count, total_exp, exp_id, sta, thold_ms, coverage);
-        
-        % 설정
-        cfg = config_default();
-        cfg.simulation_time = sim_time;
-        cfg.warmup_time = 2.0;
-        cfg.num_stas = sta;
-        cfg.rho = rho;
-        cfg.mu_on = mu_on;
-        cfg.mu_off = mu_off;
-        cfg.lambda = lambda;
-        cfg.thold_enabled = true;
-        cfg.thold_value = thold_ms / 1000;
-        cfg.verbose = 0;
-        cfg.seed = 20000 + exp_count;
-        
-        % 실행
-        exp_start = tic;
-        results = run_simulation(cfg);
-        elapsed = toc(exp_start);
-        
-        fprintf('완료 (%.1fs)\n', elapsed);
-        fprintf('         Delay: %.1fms, Complete: %.1f%%, HitRate: %.1f%%, Phantom: %d\n', ...
-            results.delay.mean_ms, results.packets.completion_rate * 100, ...
-            results.thold.hit_rate * 100, results.thold.phantom_count);
-        
-        % 메타 정보
-        results.exp_id = exp_id;
-        results.phase = 2;
-        results.config = cfg;
-        
-        % 저장
-        filename = sprintf('%s_STA%d_thold%d.mat', exp_id, sta, thold_ms);
-        save(fullfile(phase_dir, filename), 'results');
-        
-        % 요약
-        phase_results = [phase_results; summarize_results(results, cfg)];
+        for run = 1:num_runs
+            exp_count = exp_count + 1;
+            
+            sta = sta_list(si);
+            thold_ms = thold_list(ti);
+            coverage = thold_ms / (mu_off * 1000) * 100;
+            
+            exp_id = sprintf('T-%02d-R%d', (si-1)*length(thold_list) + ti, run);
+            
+            fprintf('[%d/%d] %s: STA=%d, T_hold=%dms, run=%d... ', ...
+                exp_count, total_exp, exp_id, sta, thold_ms, run);
+            
+            % 설정
+            cfg = config_default();
+            cfg.simulation_time = sim_time;
+            cfg.warmup_time = 2.0;
+            cfg.num_stas = sta;
+            cfg.rho = rho;
+            cfg.mu_on = mu_on;
+            cfg.mu_off = mu_off;
+            cfg.lambda = lambda;
+            cfg.thold_enabled = true;
+            cfg.thold_value = thold_ms / 1000;
+            cfg.verbose = 0;
+            cfg.seed = 20000 + exp_count;
+            
+            % 실행
+            exp_start = tic;
+            results = run_simulation(cfg);
+            elapsed = toc(exp_start);
+            
+            fprintf('완료 (%.1fs) - Delay: %.1fms, HitRate: %.1f%%\n', ...
+                elapsed, results.delay.mean_ms, results.thold.hit_rate * 100);
+            
+            % 메타 정보
+            results.exp_id = exp_id;
+            results.phase = 2;
+            results.run = run;
+            results.config = cfg;
+            
+            % 저장
+            filename = sprintf('%s_STA%d_thold%d_run%d.mat', exp_id, sta, thold_ms, run);
+            save(fullfile(phase_dir, filename), 'results');
+            
+            % 요약
+            summary = summarize_results(results, cfg);
+            summary.run = run;
+            phase_results = [phase_results; summary];
+        end
     end
 end
 

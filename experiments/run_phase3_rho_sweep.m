@@ -20,6 +20,7 @@ if ~exist(fullfile(results_dir, 'summary'), 'dir'), mkdir(fullfile(results_dir, 
 %% 실험 설정
 sta_list = [20, 40, 60];
 rho_list = [0.1, 0.3, 0.5];
+num_runs = 3;  % 반복 횟수
 
 % ★ Phase 2 결과 보고 최적 T_hold 설정
 optimal_thold_ms = 50;  % 기본값, Phase 2 결과 보고 조정
@@ -28,7 +29,7 @@ sim_time = 30.0;
 mu_on = 0.05;  % 50ms
 lambda = 50;
 
-total_exp = length(sta_list) * length(rho_list);
+total_exp = length(sta_list) * length(rho_list) * num_runs;
 exp_count = 0;
 phase_results = [];
 
@@ -55,53 +56,56 @@ total_start = tic;
 
 for si = 1:length(sta_list)
     for ri = 1:length(rho_list)
-        exp_count = exp_count + 1;
-        
-        sta = sta_list(si);
-        rho = rho_list(ri);
-        mu_off = mu_on * (1 - rho) / rho;
-        coverage = optimal_thold_ms / (mu_off * 1000) * 100;
-        
-        exp_id = sprintf('R-%02d', exp_count);
-        
-        fprintf('[%d/%d] %s: STA=%d, rho=%.1f (mu_off=%.0fms, %.0f%% coverage)... ', ...
-            exp_count, total_exp, exp_id, sta, rho, mu_off*1000, coverage);
-        
-        % 설정
-        cfg = config_default();
-        cfg.simulation_time = sim_time;
-        cfg.warmup_time = 2.0;
-        cfg.num_stas = sta;
-        cfg.rho = rho;
-        cfg.mu_on = mu_on;
-        cfg.mu_off = mu_off;
-        cfg.lambda = lambda;
-        cfg.thold_enabled = true;
-        cfg.thold_value = optimal_thold_ms / 1000;
-        cfg.verbose = 0;
-        cfg.seed = 30000 + exp_count;
-        
-        % 실행
-        exp_start = tic;
-        results = run_simulation(cfg);
-        elapsed = toc(exp_start);
-        
-        fprintf('완료 (%.1fs)\n', elapsed);
-        fprintf('         Delay: %.1fms, Complete: %.1f%%, HitRate: %.1f%%, Phantom: %d\n', ...
-            results.delay.mean_ms, results.packets.completion_rate * 100, ...
-            results.thold.hit_rate * 100, results.thold.phantom_count);
-        
-        % 메타 정보
-        results.exp_id = exp_id;
-        results.phase = 3;
-        results.config = cfg;
-        
-        % 저장
-        filename = sprintf('%s_STA%d_rho%.1f.mat', exp_id, sta, rho);
-        save(fullfile(phase_dir, filename), 'results');
-        
-        % 요약
-        phase_results = [phase_results; summarize_results(results, cfg)];
+        for run = 1:num_runs
+            exp_count = exp_count + 1;
+            
+            sta = sta_list(si);
+            rho = rho_list(ri);
+            mu_off = mu_on * (1 - rho) / rho;
+            coverage = optimal_thold_ms / (mu_off * 1000) * 100;
+            
+            exp_id = sprintf('R-%02d-R%d', (si-1)*length(rho_list) + ri, run);
+            
+            fprintf('[%d/%d] %s: STA=%d, rho=%.1f, run=%d... ', ...
+                exp_count, total_exp, exp_id, sta, rho, run);
+            
+            % 설정
+            cfg = config_default();
+            cfg.simulation_time = sim_time;
+            cfg.warmup_time = 2.0;
+            cfg.num_stas = sta;
+            cfg.rho = rho;
+            cfg.mu_on = mu_on;
+            cfg.mu_off = mu_off;
+            cfg.lambda = lambda;
+            cfg.thold_enabled = true;
+            cfg.thold_value = optimal_thold_ms / 1000;
+            cfg.verbose = 0;
+            cfg.seed = 30000 + exp_count;
+            
+            % 실행
+            exp_start = tic;
+            results = run_simulation(cfg);
+            elapsed = toc(exp_start);
+            
+            fprintf('완료 (%.1fs) - Delay: %.1fms, HitRate: %.1f%%\n', ...
+                elapsed, results.delay.mean_ms, results.thold.hit_rate * 100);
+            
+            % 메타 정보
+            results.exp_id = exp_id;
+            results.phase = 3;
+            results.run = run;
+            results.config = cfg;
+            
+            % 저장
+            filename = sprintf('%s_STA%d_rho%.1f_run%d.mat', exp_id, sta, rho, run);
+            save(fullfile(phase_dir, filename), 'results');
+            
+            % 요약
+            summary = summarize_results(results, cfg);
+            summary.run = run;
+            phase_results = [phase_results; summary];
+        end
     end
 end
 
