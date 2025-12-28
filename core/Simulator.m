@@ -238,13 +238,10 @@ classdef Simulator < handle
                             % → SA-RU 1개가 이번 TF에서 낭비됨
                             phantom_count = phantom_count + 1;
                             
-                            % Phantom 발생 시: T_hold 상태 해제
-                            if sta.thold_active
-                                sta.thold_active = false;
-                                sta.thold_expiry = 0;
-                                sta.mode = 0;  % RA 모드로 전환
-                                obj.ap.end_thold(sta_idx);
-                            end
+                            % Option B: T_hold 유지, 만료까지 계속 SA 시도
+                            % thold_active, thold_expiry, mode 모두 유지
+                            % → 다음 TF에서 다시 SA 할당받아 시도
+                            % (만료는 check_expiry()에서 처리)
                         end
                         
                         obj.stas(sta_idx) = sta;
@@ -309,7 +306,6 @@ classdef Simulator < handle
                 results.thold.hits = thold_stats.hits;
                 results.thold.expirations = thold_stats.expirations;
                 results.thold.hit_rate = thold_stats.hit_rate;
-                results.thold.uora_avoided = thold_stats.uora_avoided;
                 results.thold.wasted_slots = thold_stats.wasted_slots;
                 results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
                 results.thold.phantom_count = obj.metrics.thold_phantom_count;
@@ -377,31 +373,96 @@ classdef Simulator < handle
         %  ═══════════════════════════════════════════════════
         
         function assignments = schedule_sa_ru(obj)
-            % SA 모드 STA 중 BSR > 0 또는 T_hold 중인 STA를 SA-RU 할당
-            % T_hold 중인 STA는 BSR=0이어도 할당 (Phantom 가능성)
-            assignments = struct('sta_idx', {}, 'ru_idx', {});
+            % SA-RU 스케줄링 우선순위:
+            %   1순위: BSR > 0 (라운드로빈, 버퍼 다 비울 때까지)
+            %   2순위: T_hold 중 (만료 임박 순) → 남는 SA-RU에만
             
-            sa_candidates = [];
+            assignments = struct('sta_idx', {}, 'ru_idx', {});
+            num_sa_ru = obj.cfg.num_ru_sa;
+            ru_idx_base = obj.cfg.num_ru_ra;  % SA-RU 시작 인덱스
+            
+            bytes_per_ru = obj.cfg.mpdu_size;  % 2000 bytes
+            
+            %% Step 1: BSR > 0인 STA 수집 (필요한 RU 수 계산)
+            bsr_stas = [];  % struct array: sta_idx, bsr, ru_needed
             for i = 1:length(obj.stas)
                 if obj.stas(i).mode == 1  % SA 모드
                     bsr_value = obj.ap.bsr_table(i);
-                    is_thold = obj.stas(i).thold_active;
-                    
-                    % BSR > 0 이거나 T_hold 중이면 SA 후보
-                    if bsr_value > 0 || is_thold
-                        sa_candidates(end+1) = i;
+                    if bsr_value > 0
+                        ru_needed = ceil(bsr_value / bytes_per_ru);
+                        bsr_stas = [bsr_stas; struct('sta_idx', i, 'bsr', bsr_value, 'ru_needed', ru_needed)];
                     end
                 end
             end
             
-            % SA-RU에 할당 (간단한 라운드로빈)
-            num_sa_ru = obj.cfg.num_ru_sa;
-            num_assign = min(length(sa_candidates), num_sa_ru);
+            %% Step 2: 라운드로빈으로 SA-RU 할당 (BSR > 0)
+            assigned_count = 0;
+            sta_assigned_ru = zeros(length(obj.stas), 1);  % 각 STA가 받은 RU 수
             
-            for j = 1:num_assign
-                assignments(j).sta_idx = sa_candidates(j);
-                assignments(j).ru_idx = obj.cfg.num_ru_ra + j;  % SA-RU 인덱스
-                obj.stas(sa_candidates(j)).assigned_ru = assignments(j).ru_idx;
+            if ~isempty(bsr_stas)
+                % 라운드로빈: 모든 STA가 필요한 만큼 받을 때까지
+                while assigned_count < num_sa_ru
+                    assigned_this_round = false;
+                    
+                    for k = 1:length(bsr_stas)
+                        sta_idx = bsr_stas(k).sta_idx;
+                        ru_needed = bsr_stas(k).ru_needed;
+                        
+                        % 아직 더 필요하면 할당
+                        if sta_assigned_ru(sta_idx) < ru_needed && assigned_count < num_sa_ru
+                            assigned_count = assigned_count + 1;
+                            sta_assigned_ru(sta_idx) = sta_assigned_ru(sta_idx) + 1;
+                            
+                            assignments(end+1).sta_idx = sta_idx;
+                            assignments(end).ru_idx = ru_idx_base + assigned_count;
+                            
+                            assigned_this_round = true;
+                        end
+                    end
+                    
+                    % 이번 라운드에서 아무도 안 받았으면 종료
+                    if ~assigned_this_round
+                        break;
+                    end
+                end
+            end
+            
+            %% Step 3: 남은 SA-RU → T_hold 단말 (만료 임박 순)
+            remaining_ru = num_sa_ru - assigned_count;
+            
+            if remaining_ru > 0
+                % T_hold 중인 STA 수집 (BSR=0인 것만)
+                thold_stas = [];
+                for i = 1:length(obj.stas)
+                    if obj.stas(i).mode == 1 && obj.stas(i).thold_active
+                        bsr_value = obj.ap.bsr_table(i);
+                        if bsr_value == 0  % BSR>0은 이미 위에서 처리됨
+                            thold_stas = [thold_stas; struct('sta_idx', i, 'expiry', obj.stas(i).thold_expiry)];
+                        end
+                    end
+                end
+                
+                % 만료 임박 순으로 정렬 (expiry 작은 순)
+                if ~isempty(thold_stas)
+                    expiries = [thold_stas.expiry];
+                    [~, sort_idx] = sort(expiries, 'ascend');
+                    thold_stas = thold_stas(sort_idx);
+                    
+                    % 남은 SA-RU만큼 할당
+                    num_thold_assign = min(remaining_ru, length(thold_stas));
+                    for k = 1:num_thold_assign
+                        sta_idx = thold_stas(k).sta_idx;
+                        assigned_count = assigned_count + 1;
+                        
+                        assignments(end+1).sta_idx = sta_idx;
+                        assignments(end).ru_idx = ru_idx_base + assigned_count;
+                    end
+                end
+            end
+            
+            %% Step 4: assigned_ru 업데이트
+            for j = 1:length(assignments)
+                obj.stas(assignments(j).sta_idx).assigned_ru = assignments(j).ru_idx;
             end
         end
         

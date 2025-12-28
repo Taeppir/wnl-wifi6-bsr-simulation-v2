@@ -436,7 +436,6 @@ classdef MetricsCollector < handle
             results.thold.hit_rate = 0;
             results.thold.wasted_slots = obj.thold_wasted_slots;
             results.thold.wasted_ms = obj.thold_wasted_slots * obj.cfg.slot_duration * 1000;
-            results.thold.uora_avoided = 0;
             results.thold.phantom_count = obj.thold_phantom_count;
             
             %% ═══════════════════════════════════════════════════
@@ -468,9 +467,17 @@ classdef MetricsCollector < handle
                 else
                     results.fairness.cov = 0;
                 end
+                
+                % Min/Max Throughput Ratio (NEW)
+                if max(throughputs) > 0
+                    results.fairness.min_max_ratio = min(throughputs) / max(throughputs);
+                else
+                    results.fairness.min_max_ratio = 1;
+                end
             else
                 results.fairness.jain_index = 1;
                 results.fairness.cov = 0;
+                results.fairness.min_max_ratio = 1;
             end
             
             %% ═══════════════════════════════════════════════════
