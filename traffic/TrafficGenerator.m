@@ -46,19 +46,20 @@ classdef TrafficGenerator < handle
             % 실제로는 큐가 항상 가득 찬 상태 유지
             
             for i = 1:length(stas)
-                % 충분히 많은 패킷 생성
-                num_pkts = obj.cfg.total_slots;
+                % 충분히 많은 패킷 생성 (Saturated는 매우 많을 수 있음)
+                num_pkts = min(obj.cfg.total_slots, 100000);  % 최대 100K로 제한
                 
-                stas(i).packets = struct(...
-                    'idx', num2cell(1:num_pkts)', ...
-                    'size', num2cell(obj.cfg.mpdu_size * ones(num_pkts, 1)), ...
-                    'arrival_time', num2cell(zeros(num_pkts, 1)), ...
-                    'enqueue_slot', num2cell(zeros(num_pkts, 1)), ...
-                    'completion_slot', num2cell(zeros(num_pkts, 1)), ...
-                    'completed', num2cell(false(num_pkts, 1)), ...
-                    'delay_slots', num2cell(zeros(num_pkts, 1)) ...
-                );
+                % 템플릿 패킷 생성 후 배열로 확장
+                template_pkt = STA.create_packet(1, obj.cfg.mpdu_size, 0);
                 
+                % 구조체 배열 사전 할당
+                packets(num_pkts) = template_pkt;
+                for j = 1:num_pkts
+                    packets(j) = template_pkt;
+                    packets(j).idx = j;
+                end
+                
+                stas(i).packets = packets';  % 열 벡터로 변환
                 stas(i).num_packets = num_pkts;
                 stas(i).next_packet_idx = 1;
                 
@@ -88,13 +89,8 @@ classdef TrafficGenerator < handle
                     
                     if current_time < sim_time
                         idx = idx + 1;
-                        pkt.idx = idx;
-                        pkt.size = pkt_size;
-                        pkt.arrival_time = current_time;
-                        pkt.enqueue_slot = 0;
-                        pkt.completion_slot = 0;
-                        pkt.completed = false;
-                        pkt.delay_slots = 0;
+                        % STA.create_packet 사용하여 모든 필드 포함
+                        pkt = STA.create_packet(idx, pkt_size, current_time);
                         
                         packets = [packets; pkt];
                     end
@@ -141,13 +137,8 @@ classdef TrafficGenerator < handle
                             
                             if arrival_time < on_end && arrival_time < sim_time
                                 idx = idx + 1;
-                                pkt.idx = idx;
-                                pkt.size = pkt_size;
-                                pkt.arrival_time = arrival_time;
-                                pkt.enqueue_slot = 0;
-                                pkt.completion_slot = 0;
-                                pkt.completed = false;
-                                pkt.delay_slots = 0;
+                                % STA.create_packet 사용하여 모든 필드 포함
+                                pkt = STA.create_packet(idx, pkt_size, arrival_time);
                                 
                                 packets = [packets; pkt];
                                 current_time = arrival_time;

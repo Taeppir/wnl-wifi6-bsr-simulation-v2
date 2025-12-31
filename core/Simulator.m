@@ -197,9 +197,65 @@ classdef Simulator < handle
                     num_tfs = num_tfs + 1;
                     
                     % ───────────────────────────────────────────
+                    % Phase 2.5: 첫 TF 슬롯 기록 (지연 분해용)
+                    % ───────────────────────────────────────────
+                    obj.record_first_tf(slot);
+                    
+                    % ───────────────────────────────────────────
                     % Phase 3: SA-RU 스케줄링 (BSR 기반)
                     % ───────────────────────────────────────────
                     sa_assignments = obj.schedule_sa_ru();
+                    
+                    % ───────────────────────────────────────────
+                    % Phase 3.5: T_hold Hit/Phantom 판정
+                    % SA 할당받은 T_hold STA의 버퍼 확인
+                    % 
+                    % Note: 실제로 AP는 TF 끝에 전송 결과로 알게 됨.
+                    %       같은 TF 주기 내 일이라 여기서 처리해도 결과 동일.
+                    % ───────────────────────────────────────────
+                    valid_sa = struct('sta_idx', {}, 'ru_idx', {});
+                    phantom_count = 0;
+                    hit_count = 0;
+                    
+                    for i = 1:length(sa_assignments)
+                        sta_idx = sa_assignments(i).sta_idx;
+                        sta = obj.stas(sta_idx);
+                        
+                        if sta.queue_size > 0
+                            % 실제 전송할 데이터 있음
+                            valid_sa(end+1) = sa_assignments(i);
+                            
+                            % T_hold Hit 판정: T_hold 중에 SA 할당받아서 전송
+                            if sta.thold_active
+                                hit_count = hit_count + 1;
+                                sta.thold_active = false;
+                                sta.thold_expiry = 0;
+                                obj.ap.end_thold(sta_idx);
+                                % mode=1 유지 (SA 전송 후 상태는 process_tx_results에서)
+                            end
+                        else
+                            % Phantom! T_hold 중인데 패킷 없음
+                            % → SA-RU 1개가 이번 TF에서 낭비됨
+                            phantom_count = phantom_count + 1;
+                            
+                            % Option B: T_hold 유지, 만료까지 계속 SA 시도
+                            % thold_active, thold_expiry, mode 모두 유지
+                            % → 다음 TF에서 다시 SA 할당받아 시도
+                            % (만료는 check_expiry()에서 처리)
+                        end
+                        
+                        obj.stas(sta_idx) = sta;
+                    end
+                    
+                    % 메트릭에 Hit/Phantom 기록
+                    if ~is_warmup
+                        obj.metrics.record_phantom(phantom_count);
+                    end
+                    
+                    % T_hold Hit 카운트 (THoldManager에 직접 추가)
+                    if obj.cfg.thold_enabled
+                        obj.thold.hits = obj.thold.hits + hit_count;
+                    end
                     
                     % ───────────────────────────────────────────
                     % Phase 4: RA-RU 접근 (UORA)
@@ -209,8 +265,8 @@ classdef Simulator < handle
                     % ───────────────────────────────────────────
                     % Phase 5: 충돌 검출 및 전송 결과
                     % ───────────────────────────────────────────
-                    [success, collided, idle] = obj.collision.detect( ...
-                        obj.stas, obj.rus, ra_attempts, sa_assignments);
+                    [success, collided, idle, collision_slots] = obj.collision.detect( ...
+                        obj.stas, obj.rus, ra_attempts, valid_sa);
                     
                     % ───────────────────────────────────────────
                     % Phase 6: 전송 결과 처리
@@ -222,7 +278,7 @@ classdef Simulator < handle
                     % ───────────────────────────────────────────
                     if ~is_warmup
                         obj.metrics.collect(slot, success, collided, idle, ...
-                            sa_assignments, obj.stas, obj.ap);
+                            sa_assignments, obj.stas, obj.ap, collision_slots);
                     end
                     
                     % 다음 TF 슬롯 설정
@@ -242,6 +298,18 @@ classdef Simulator < handle
             
             % 최종 결과 계산
             results = obj.metrics.finalize(obj.stas);
+            
+            % T_hold 통계 추가
+            if obj.cfg.thold_enabled
+                thold_stats = obj.thold.get_stats();
+                results.thold.activations = thold_stats.activations;
+                results.thold.hits = thold_stats.hits;
+                results.thold.expirations = thold_stats.expirations;
+                results.thold.hit_rate = thold_stats.hit_rate;
+                results.thold.wasted_slots = thold_stats.wasted_slots;
+                results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
+                results.thold.phantom_count = obj.metrics.thold_phantom_count;
+            end
         end
         
         %% ═══════════════════════════════════════════════════
@@ -263,13 +331,34 @@ classdef Simulator < handle
                         sta.queue_size = sta.queue_size + pkt.size;
                         sta.queue_packets = sta.queue_packets + 1;
                         pkt.enqueue_slot = slot;
-                        sta.packets(sta.next_packet_idx) = pkt;
-                        sta.next_packet_idx = sta.next_packet_idx + 1;
+                        
+                        % ═══════════════════════════════════════════
+                        % 지연 분해용: 도착 시점 상태 기록
+                        % ═══════════════════════════════════════════
                         
                         % T_hold 중에 패킷 도착 처리
                         if obj.cfg.thold_enabled && sta.thold_active
                             obj.thold.handle_new_packet(sta, obj.ap, slot);
+                            % T_hold Hit! → SA 모드 유지, UORA 스킵
+                            pkt.thold_hit = true;
+                            pkt.sa_start_slot = slot;
+                            pkt.uora_start_slot = 0;  % UORA 안 거침
+                            pkt.uora_end_slot = 0;
+                        elseif sta.mode == 1
+                            % 이미 SA 모드 (큐에 다른 패킷이 있어서)
+                            pkt.sa_start_slot = slot;
+                            pkt.uora_start_slot = 0;
+                            pkt.uora_end_slot = 0;
+                            pkt.thold_hit = false;
+                        else
+                            % RA 모드 → UORA 경쟁 필요
+                            pkt.uora_start_slot = slot;
+                            pkt.sa_start_slot = 0;
+                            pkt.thold_hit = false;
                         end
+                        
+                        sta.packets(sta.next_packet_idx) = pkt;
+                        sta.next_packet_idx = sta.next_packet_idx + 1;
                     else
                         break;
                     end
@@ -284,27 +373,96 @@ classdef Simulator < handle
         %  ═══════════════════════════════════════════════════
         
         function assignments = schedule_sa_ru(obj)
-            % SA 모드 STA 중 BSR > 0인 STA를 찾아 SA-RU 할당
-            assignments = struct('sta_idx', {}, 'ru_idx', {});
+            % SA-RU 스케줄링 우선순위:
+            %   1순위: BSR > 0 (라운드로빈, 버퍼 다 비울 때까지)
+            %   2순위: T_hold 중 (만료 임박 순) → 남는 SA-RU에만
             
-            sa_candidates = [];
+            assignments = struct('sta_idx', {}, 'ru_idx', {});
+            num_sa_ru = obj.cfg.num_ru_sa;
+            ru_idx_base = obj.cfg.num_ru_ra;  % SA-RU 시작 인덱스
+            
+            bytes_per_ru = obj.cfg.mpdu_size;  % 2000 bytes
+            
+            %% Step 1: BSR > 0인 STA 수집 (필요한 RU 수 계산)
+            bsr_stas = [];  % struct array: sta_idx, bsr, ru_needed
             for i = 1:length(obj.stas)
                 if obj.stas(i).mode == 1  % SA 모드
                     bsr_value = obj.ap.bsr_table(i);
                     if bsr_value > 0
-                        sa_candidates(end+1) = i;
+                        ru_needed = ceil(bsr_value / bytes_per_ru);
+                        bsr_stas = [bsr_stas; struct('sta_idx', i, 'bsr', bsr_value, 'ru_needed', ru_needed)];
                     end
                 end
             end
             
-            % SA-RU에 할당 (간단한 라운드로빈)
-            num_sa_ru = obj.cfg.num_ru_sa;
-            num_assign = min(length(sa_candidates), num_sa_ru);
+            %% Step 2: 라운드로빈으로 SA-RU 할당 (BSR > 0)
+            assigned_count = 0;
+            sta_assigned_ru = zeros(length(obj.stas), 1);  % 각 STA가 받은 RU 수
             
-            for j = 1:num_assign
-                assignments(j).sta_idx = sa_candidates(j);
-                assignments(j).ru_idx = obj.cfg.num_ru_ra + j;  % SA-RU 인덱스
-                obj.stas(sa_candidates(j)).assigned_ru = assignments(j).ru_idx;
+            if ~isempty(bsr_stas)
+                % 라운드로빈: 모든 STA가 필요한 만큼 받을 때까지
+                while assigned_count < num_sa_ru
+                    assigned_this_round = false;
+                    
+                    for k = 1:length(bsr_stas)
+                        sta_idx = bsr_stas(k).sta_idx;
+                        ru_needed = bsr_stas(k).ru_needed;
+                        
+                        % 아직 더 필요하면 할당
+                        if sta_assigned_ru(sta_idx) < ru_needed && assigned_count < num_sa_ru
+                            assigned_count = assigned_count + 1;
+                            sta_assigned_ru(sta_idx) = sta_assigned_ru(sta_idx) + 1;
+                            
+                            assignments(end+1).sta_idx = sta_idx;
+                            assignments(end).ru_idx = ru_idx_base + assigned_count;
+                            
+                            assigned_this_round = true;
+                        end
+                    end
+                    
+                    % 이번 라운드에서 아무도 안 받았으면 종료
+                    if ~assigned_this_round
+                        break;
+                    end
+                end
+            end
+            
+            %% Step 3: 남은 SA-RU → T_hold 단말 (만료 임박 순)
+            remaining_ru = num_sa_ru - assigned_count;
+            
+            if remaining_ru > 0
+                % T_hold 중인 STA 수집 (BSR=0인 것만)
+                thold_stas = [];
+                for i = 1:length(obj.stas)
+                    if obj.stas(i).mode == 1 && obj.stas(i).thold_active
+                        bsr_value = obj.ap.bsr_table(i);
+                        if bsr_value == 0  % BSR>0은 이미 위에서 처리됨
+                            thold_stas = [thold_stas; struct('sta_idx', i, 'expiry', obj.stas(i).thold_expiry)];
+                        end
+                    end
+                end
+                
+                % 만료 임박 순으로 정렬 (expiry 작은 순)
+                if ~isempty(thold_stas)
+                    expiries = [thold_stas.expiry];
+                    [~, sort_idx] = sort(expiries, 'ascend');
+                    thold_stas = thold_stas(sort_idx);
+                    
+                    % 남은 SA-RU만큼 할당
+                    num_thold_assign = min(remaining_ru, length(thold_stas));
+                    for k = 1:num_thold_assign
+                        sta_idx = thold_stas(k).sta_idx;
+                        assigned_count = assigned_count + 1;
+                        
+                        assignments(end+1).sta_idx = sta_idx;
+                        assignments(end).ru_idx = ru_idx_base + assigned_count;
+                    end
+                end
+            end
+            
+            %% Step 4: assigned_ru 업데이트
+            for j = 1:length(assignments)
+                obj.stas(assignments(j).sta_idx).assigned_ru = assignments(j).ru_idx;
             end
         end
         
@@ -351,8 +509,8 @@ classdef Simulator < handle
                 
                 sta = obj.stas(sta_idx);
                 
-                % 패킷 완료 처리
-                [sta, completed_pkt] = obj.complete_packet(sta, slot);
+                % 패킷 완료 처리 (tx_type 전달)
+                [sta, completed_pkt] = obj.complete_packet(sta, slot, tx_type);
                 
                 % BSR 업데이트
                 if strcmp(tx_type, 'ra')
@@ -360,8 +518,19 @@ classdef Simulator < handle
                     obj.ap.bsr_table(sta_idx) = sta.queue_size;
                     obj.metrics.record_explicit_bsr();
                     
+                    % RA 성공 후 큐에 남은 패킷들의 SA 모드 진입 기록
                     if sta.queue_size > 0
                         sta.mode = 1;  % SA 모드로 전환
+                        % 큐에 있는 패킷들의 sa_start_slot 기록
+                        for j = 1:sta.num_packets
+                            if sta.packets(j).enqueue_slot > 0 && ~sta.packets(j).completed
+                                if sta.packets(j).sa_start_slot == 0
+                                    sta.packets(j).sa_start_slot = slot;
+                                    % UORA 종료 시점도 기록
+                                    sta.packets(j).uora_end_slot = slot;
+                                end
+                            end
+                        end
                     else
                         % 버퍼 비어있으면 T_hold 시작
                         if obj.cfg.thold_enabled
@@ -412,7 +581,7 @@ classdef Simulator < handle
         %  패킷 완료 처리
         %  ═══════════════════════════════════════════════════
         
-        function [sta, pkt] = complete_packet(obj, sta, slot)
+        function [sta, pkt] = complete_packet(obj, sta, slot, tx_type)
             % 큐에서 가장 오래된 패킷 완료
             pkt = [];
             
@@ -424,6 +593,52 @@ classdef Simulator < handle
                         pkt.completion_slot = slot;
                         pkt.completed = true;
                         pkt.delay_slots = slot - pkt.enqueue_slot;
+                        
+                        % 전송 타입 기록
+                        pkt.tx_type = tx_type;
+                        
+                        % ═══════════════════════════════════════════
+                        % 지연 분해 계산
+                        % ═══════════════════════════════════════════
+                        
+                        % Initial Wait: 패킷 도착 → 첫 TF
+                        if pkt.first_tf_slot > 0
+                            pkt.initial_wait_slots = pkt.first_tf_slot - pkt.enqueue_slot;
+                        else
+                            pkt.initial_wait_slots = 0;
+                        end
+                        
+                        % UORA Contention: 첫 TF → UORA 성공 (RA 전송인 경우만)
+                        if strcmp(tx_type, 'ra')
+                            % RA 전송: UORA 경쟁을 거침
+                            pkt.uora_end_slot = slot;
+                            if pkt.first_tf_slot > 0
+                                pkt.uora_contention_slots = slot - pkt.first_tf_slot;
+                            else
+                                pkt.uora_contention_slots = slot - pkt.enqueue_slot - pkt.initial_wait_slots;
+                            end
+                            pkt.sa_wait_slots = 0;  % SA를 거치지 않음
+                        else
+                            % SA 전송
+                            if pkt.uora_start_slot > 0 && pkt.uora_end_slot > 0
+                                % UORA를 거쳐서 SA로 온 경우
+                                pkt.uora_contention_slots = pkt.uora_end_slot - pkt.first_tf_slot;
+                                if pkt.uora_contention_slots < 0
+                                    pkt.uora_contention_slots = 0;
+                                end
+                            else
+                                % 처음부터 SA였거나 T_hold hit
+                                pkt.uora_contention_slots = 0;
+                            end
+                            
+                            % SA Scheduling Wait: SA 진입 → 전송 완료
+                            if pkt.sa_start_slot > 0
+                                pkt.sa_wait_slots = slot - pkt.sa_start_slot;
+                            else
+                                pkt.sa_wait_slots = 0;
+                            end
+                        end
+                        
                         sta.packets(i) = pkt;
                         
                         % 큐 업데이트
@@ -434,6 +649,28 @@ classdef Simulator < handle
                         break;
                     end
                 end
+            end
+        end
+        
+        %% ═══════════════════════════════════════════════════
+        %  첫 TF 슬롯 기록 (지연 분해용)
+        %  ═══════════════════════════════════════════════════
+        
+        function record_first_tf(obj, slot)
+            % 큐에 있는 패킷들 중 first_tf_slot이 0인 것들에 기록
+            for i = 1:length(obj.stas)
+                sta = obj.stas(i);
+                
+                for j = 1:sta.num_packets
+                    pkt = sta.packets(j);
+                    % 큐에 있고 (enqueue_slot > 0), 완료되지 않고, 첫 TF 미기록
+                    if pkt.enqueue_slot > 0 && ~pkt.completed && pkt.first_tf_slot == 0
+                        pkt.first_tf_slot = slot;
+                        sta.packets(j) = pkt;
+                    end
+                end
+                
+                obj.stas(i) = sta;
             end
         end
     end

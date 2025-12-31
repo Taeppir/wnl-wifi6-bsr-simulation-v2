@@ -12,6 +12,7 @@ classdef THoldManager < handle
         activations     % T_hold 발동 횟수
         hits            % T_hold 중 패킷 도착 횟수 (적중)
         expirations     % T_hold 만료 횟수 (미적중)
+        wasted_slots    % 낭비된 슬롯 (만료 시 전체 T_hold 기간)
     end
     
     methods
@@ -27,6 +28,7 @@ classdef THoldManager < handle
             obj.activations = 0;
             obj.hits = 0;
             obj.expirations = 0;
+            obj.wasted_slots = 0;
         end
         
         %% ═══════════════════════════════════════════════════
@@ -72,11 +74,14 @@ classdef THoldManager < handle
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
                         
-                        % AP BSR 초기화
-                        ap.bsr_table(i) = 0;
+                        % AP T_hold 상태 해제
+                        % Note: bsr_table은 이미 0 → 업데이트 불필요
                         ap.end_thold(i);
                         
                         obj.expirations = obj.expirations + 1;
+                        
+                        % 낭비된 슬롯 기록 (전체 T_hold 기간 기다렸지만 패킷 안 옴)
+                        obj.wasted_slots = obj.wasted_slots + obj.thold_slots;
                     else
                         % 버퍼에 데이터 있음 (이미 hit 처리됨)
                         sta.thold_active = false;
@@ -97,18 +102,14 @@ classdef THoldManager < handle
                 return;
             end
             
-            % T_hold Hit! SA 모드 유지, 타이머 해제
-            sta.thold_active = false;
-            sta.thold_expiry = 0;
-            % sta.mode는 이미 1 (SA)
+            % T_hold 중에 패킷 도착!
+            % thold_active는 유지 → 다음 TF에서 SA 할당 받기 위해
+            % 실제 Hit 판정은 Phase 3.5에서 (SA 할당 + 버퍼 확인)
             
-            % ★ 핵심: BSR 테이블 업데이트! (이게 없으면 AP가 스케줄링 안 함)
-            ap.bsr_table(sta.id) = sta.queue_size;
+            % Note: thold_active = false는 여기서 하지 않음!
+            % Phase 3.5에서 SA 할당 시점에 처리
             
-            % AP 측 T_hold도 해제
-            ap.end_thold(sta.id);
-            
-            obj.hits = obj.hits + 1;
+            % hits 카운트도 Phase 3.5에서 (실제 전송 성공 시)
         end
         
         %% ═══════════════════════════════════════════════════
@@ -119,6 +120,7 @@ classdef THoldManager < handle
             stats.activations = obj.activations;
             stats.hits = obj.hits;
             stats.expirations = obj.expirations;
+            stats.wasted_slots = obj.wasted_slots;
             
             if obj.activations > 0
                 stats.hit_rate = obj.hits / obj.activations;

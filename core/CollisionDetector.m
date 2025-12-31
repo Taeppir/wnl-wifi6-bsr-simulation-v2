@@ -22,11 +22,12 @@ classdef CollisionDetector < handle
         %  충돌 검출
         %  ═══════════════════════════════════════════════════
         
-        function [success, collided, idle] = detect(obj, stas, rus, ra_attempts, sa_assignments)
+        function [success, collided, idle, collision_slots] = detect(obj, stas, rus, ra_attempts, sa_assignments)
             % 결과 초기화
             success = struct('sta_idx', {}, 'tx_type', {}, 'ru_idx', {});
             collided = [];
             idle = struct('ra', 0, 'sa', 0);
+            collision_slots = 0;  % 충돌 발생한 RA-RU 슬롯 수
             
             % RU 리셋
             rus.reset();
@@ -71,6 +72,7 @@ classdef CollisionDetector < handle
                 else
                     % 충돌
                     collided = [collided, occupants];
+                    collision_slots = collision_slots + 1;  % 충돌 슬롯 카운트
                 end
             end
             

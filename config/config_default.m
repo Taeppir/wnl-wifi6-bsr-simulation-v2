@@ -8,8 +8,8 @@ function cfg = config_default()
     %  시뮬레이션 제어
     %  ═══════════════════════════════════════════════════
     
-    cfg.simulation_time = 60.0;      % 시뮬레이션 시간 (초)
-    cfg.warmup_time = 1.0;           % 워밍업 시간 (초)
+    cfg.simulation_time = 30.0;      % 시뮬레이션 시간 (초)
+    cfg.warmup_time = 0.0;           % 워밍업 시간 (초)
     cfg.verbose = 1;                 % 출력 레벨 (0: 없음, 1: 기본, 2: 상세)
     cfg.seed = 1234;                 % 랜덤 시드
     
@@ -64,7 +64,7 @@ function cfg = config_default()
     cfg.mu_on = 0.05;                % On 기간 평균 (초)
     cfg.rho = 0.5;                   % Duty cycle (On 비율)
     cfg.mu_off = cfg.mu_on * (1 - cfg.rho) / cfg.rho;  % 자동 계산
-    cfg.lambda = 100;                % On 기간 중 패킷 도착률 (pkt/s)
+    cfg.lambda = 50;                % On 기간 중 패킷 도착률 (pkt/s)
     
     %% ═══════════════════════════════════════════════════
     %  메트릭 수집 설정

@@ -18,10 +18,10 @@ lambda_values = [20, 50, 100];  % pkt/s
 num_runs = 1;
 
 % 고정 파라미터
-sim_time = 10.0;
+sim_time = 5.0;
 num_stas = 20;
 rho = 0.5;
-mu_on = 0.01;  % 10ms
+mu_on = 0.05;  % 10ms
 mu_off = mu_on * (1 - rho) / rho;  % rho = 0.5 → mu_off = 0.01
 thold_value = 0.010;  % 10ms
 
