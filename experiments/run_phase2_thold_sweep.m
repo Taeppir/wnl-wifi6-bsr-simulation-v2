@@ -61,7 +61,7 @@ for si = 1:length(sta_list)
             % 설정
             cfg = config_default();
             cfg.simulation_time = sim_time;
-            cfg.warmup_time = 2.0;
+            cfg.warmup_time = 0.0;
             cfg.num_stas = sta;
             cfg.rho = rho;
             cfg.mu_on = mu_on;
