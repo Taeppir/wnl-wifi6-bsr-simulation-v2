@@ -9,10 +9,12 @@ classdef THoldManager < handle
         policy          % 정책: 'fixed' | 'adaptive'
         
         %% 통계
-        activations     % T_hold 발동 횟수
-        hits            % T_hold 중 패킷 도착 횟수 (적중)
-        expirations     % T_hold 만료 횟수 (미적중)
-        wasted_slots    % 낭비된 슬롯 (만료 시 전체 T_hold 기간)
+        activations     % T_hold 발동 횟수 (= hits + expirations)
+        hits            % Hit: T_hold 중 패킷 도착 + SA 할당 받아서 전송 성공
+        expirations     % T_hold 만료 총 횟수 (= expirations_empty + expirations_with_data)
+        expirations_empty     % Clean Expiration: T_hold 만료 + 버퍼 비어있음
+        expirations_with_data % Expiration with Data: T_hold 만료 + 버퍼에 패킷 있음 (SA 할당 못 받음)
+        wasted_slots    % 낭비된 슬롯 (Clean Expiration 시 전체 T_hold 기간)
     end
     
     methods
@@ -28,6 +30,8 @@ classdef THoldManager < handle
             obj.activations = 0;
             obj.hits = 0;
             obj.expirations = 0;
+            obj.expirations_empty = 0;
+            obj.expirations_with_data = 0;
             obj.wasted_slots = 0;
         end
         
@@ -69,23 +73,38 @@ classdef THoldManager < handle
                     % T_hold 만료!
                     
                     if sta.queue_size == 0
-                        % 버퍼가 여전히 비어있음 → RA 모드로 전환
-                        sta.mode = 0;
+                        % ═══════════════════════════════════════════
+                        % Case: Clean Expiration
+                        % 버퍼가 비어있음 → 패킷이 T_hold 기간 내 도착 안 함
+                        % ═══════════════════════════════════════════
+                        sta.mode = 0;  % RA 모드로 전환
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
                         
                         % AP T_hold 상태 해제
-                        % Note: bsr_table은 이미 0 → 업데이트 불필요
                         ap.end_thold(i);
                         
                         obj.expirations = obj.expirations + 1;
+                        obj.expirations_empty = obj.expirations_empty + 1;
                         
                         % 낭비된 슬롯 기록 (전체 T_hold 기간 기다렸지만 패킷 안 옴)
                         obj.wasted_slots = obj.wasted_slots + obj.thold_slots;
                     else
-                        % 버퍼에 데이터 있음 (이미 hit 처리됨)
+                        % ═══════════════════════════════════════════
+                        % Case: Expiration with Data
+                        % 버퍼에 패킷 있음 → T_hold 중 도착했지만 SA 할당 못 받음
+                        % ═══════════════════════════════════════════
+                        sta.mode = 0;  % RA 모드로 전환 (UORA 참여 가능하게)
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
+                        
+                        % AP T_hold 상태 해제
+                        ap.end_thold(i);
+                        
+                        obj.expirations = obj.expirations + 1;
+                        obj.expirations_with_data = obj.expirations_with_data + 1;
+                        
+                        % Note: wasted_slots는 기록 안 함 (패킷은 도착했으므로)
                     end
                     
                     stas(i) = sta;
@@ -120,6 +139,8 @@ classdef THoldManager < handle
             stats.activations = obj.activations;
             stats.hits = obj.hits;
             stats.expirations = obj.expirations;
+            stats.expirations_empty = obj.expirations_empty;
+            stats.expirations_with_data = obj.expirations_with_data;
             stats.wasted_slots = obj.wasted_slots;
             
             if obj.activations > 0

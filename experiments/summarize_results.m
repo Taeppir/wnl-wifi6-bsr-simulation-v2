@@ -107,6 +107,19 @@ function summary = summarize_results(results, cfg)
         summary.thold_activations = results.thold.activations;
         summary.thold_hits = results.thold.hits;
         summary.thold_expirations = results.thold.expirations;
+        
+        % 세분화된 expiration 통계
+        if isfield(results.thold, 'expirations_empty')
+            summary.thold_expirations_empty = results.thold.expirations_empty;
+        else
+            summary.thold_expirations_empty = results.thold.expirations;
+        end
+        if isfield(results.thold, 'expirations_with_data')
+            summary.thold_expirations_with_data = results.thold.expirations_with_data;
+        else
+            summary.thold_expirations_with_data = 0;
+        end
+        
         summary.thold_hit_rate = results.thold.hit_rate;
         summary.thold_wasted_slots = results.thold.wasted_slots;
         summary.thold_wasted_ms = results.thold.wasted_slots * 0.009;
@@ -120,6 +133,8 @@ function summary = summarize_results(results, cfg)
         summary.thold_activations = 0;
         summary.thold_hits = 0;
         summary.thold_expirations = 0;
+        summary.thold_expirations_empty = 0;
+        summary.thold_expirations_with_data = 0;
         summary.thold_hit_rate = 0;
         summary.thold_wasted_slots = 0;
         summary.thold_wasted_ms = 0;

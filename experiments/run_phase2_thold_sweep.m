@@ -18,12 +18,12 @@ if ~exist(phase_dir, 'dir'), mkdir(phase_dir); end
 if ~exist(fullfile(results_dir, 'summary'), 'dir'), mkdir(fullfile(results_dir, 'summary')); end
 
 %% 실험 설정
-sta_list = [20, 40, 60];
-thold_list = [30, 50, 70];  % ms
-num_runs = 3;  % 반복 횟수
+sta_list = [20];
+thold_list = [0, 30];  % ms
+num_runs = 1;  % 반복 횟수
 
 rho = 0.5;  % 고정
-sim_time = 30.0;
+sim_time = 15.0;
 mu_on = 0.05;  % 50ms
 mu_off = mu_on * (1 - rho) / rho;  % 50ms
 lambda = 50;

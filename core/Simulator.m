@@ -305,6 +305,8 @@ classdef Simulator < handle
                 results.thold.activations = thold_stats.activations;
                 results.thold.hits = thold_stats.hits;
                 results.thold.expirations = thold_stats.expirations;
+                results.thold.expirations_empty = thold_stats.expirations_empty;
+                results.thold.expirations_with_data = thold_stats.expirations_with_data;
                 results.thold.hit_rate = thold_stats.hit_rate;
                 results.thold.wasted_slots = thold_stats.wasted_slots;
                 results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
