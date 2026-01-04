@@ -423,6 +423,12 @@ classdef Simulator < handle
                 end
             end
             
+            % BSR 큰 순서로 정렬
+            if ~isempty(bsr_stas)
+                [~, sort_idx] = sort([bsr_stas.bsr], 'descend');
+                bsr_stas = bsr_stas(sort_idx);
+            end
+            
             %% Step 2: 라운드로빈으로 SA-RU 할당 (BSR > 0)
             assigned_count = 0;
             sta_assigned_ru = zeros(length(obj.stas), 1);  % 각 STA가 받은 RU 수
