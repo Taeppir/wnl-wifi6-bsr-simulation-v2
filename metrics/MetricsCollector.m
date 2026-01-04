@@ -189,11 +189,18 @@ classdef MetricsCollector < handle
             all_uora_contention = [];
             all_sa_wait = [];
             
-            % T_hold hit 패킷과 일반 패킷 분리
-            thold_hit_delays = [];
-            non_thold_delays = [];
-            ra_packet_delays = [];
-            sa_packet_delays = [];
+            % 패킷 분류별 지연 배열
+            % [1] UORA 스킵 여부
+            uora_skipped_delays = [];    % UORA 안 거친 패킷
+            uora_used_delays = [];       % UORA 거친 패킷
+            
+            % [2] UORA 스킵 이유별
+            thold_hit_delays = [];       % T_hold hit으로 스킵
+            sa_queue_delays = [];        % SA queue로 스킵
+            
+            % [3] 전송 타입별
+            ra_packet_delays = [];       % RA-RU로 전송
+            sa_packet_delays = [];       % SA-RU로 전송
             
             for i = 1:length(stas)
                 for j = 1:stas(i).num_packets
@@ -204,13 +211,21 @@ classdef MetricsCollector < handle
                         all_uora_contention(end+1) = pkt.uora_contention_slots;
                         all_sa_wait(end+1) = pkt.sa_wait_slots;
                         
-                        % 전송 타입별 분류
-                        if pkt.thold_hit
-                            thold_hit_delays(end+1) = pkt.delay_slots;
+                        % [1] UORA 스킵 여부
+                        if pkt.uora_skipped
+                            uora_skipped_delays(end+1) = pkt.delay_slots;
                         else
-                            non_thold_delays(end+1) = pkt.delay_slots;
+                            uora_used_delays(end+1) = pkt.delay_slots;
                         end
                         
+                        % [2] UORA 스킵 이유별
+                        if strcmp(pkt.skip_reason, 'thold_hit')
+                            thold_hit_delays(end+1) = pkt.delay_slots;
+                        elseif strcmp(pkt.skip_reason, 'sa_queue')
+                            sa_queue_delays(end+1) = pkt.delay_slots;
+                        end
+                        
+                        % [3] 전송 타입별
                         if strcmp(pkt.tx_type, 'ra')
                             ra_packet_delays(end+1) = pkt.delay_slots;
                         else
@@ -228,17 +243,23 @@ classdef MetricsCollector < handle
                 delay_ms = all_total_delay * slot_to_ms;
                 results.delay.mean_ms = mean(delay_ms);
                 results.delay.std_ms = std(delay_ms);
+                results.delay.min_ms = min(delay_ms);
+                results.delay.p10_ms = prctile(delay_ms, 10);
                 results.delay.p50_ms = prctile(delay_ms, 50);
                 results.delay.p90_ms = prctile(delay_ms, 90);
                 results.delay.p99_ms = prctile(delay_ms, 99);
                 results.delay.max_ms = max(delay_ms);
+                results.delay.all_ms = delay_ms;  % CDF 그래프용 전체 배열
             else
                 results.delay.mean_ms = 0;
                 results.delay.std_ms = 0;
+                results.delay.min_ms = 0;
+                results.delay.p10_ms = 0;
                 results.delay.p50_ms = 0;
                 results.delay.p90_ms = 0;
                 results.delay.p99_ms = 0;
                 results.delay.max_ms = 0;
+                results.delay.all_ms = [];
             end
             
             % Initial Wait 통계
@@ -285,39 +306,185 @@ classdef MetricsCollector < handle
                 results.delay_decomp.sa_wait.p90_ms = 0;
             end
             
-            % T_hold Hit vs Non-Hit 지연 비교
+            %% ═══════════════════════════════════════════════════
+            %  패킷 분류별 지연 통계
+            %  ═══════════════════════════════════════════════════
+            
+            % [1] UORA 스킵 vs UORA 사용
+            if ~isempty(uora_skipped_delays)
+                skipped_ms = uora_skipped_delays * slot_to_ms;
+                results.pkt_class.uora_skipped.count = length(uora_skipped_delays);
+                results.pkt_class.uora_skipped.ratio = length(uora_skipped_delays) / total_completed;
+                results.pkt_class.uora_skipped.mean_ms = mean(skipped_ms);
+                results.pkt_class.uora_skipped.std_ms = std(skipped_ms);
+                results.pkt_class.uora_skipped.min_ms = min(skipped_ms);
+                results.pkt_class.uora_skipped.p10_ms = prctile(skipped_ms, 10);
+                results.pkt_class.uora_skipped.p50_ms = prctile(skipped_ms, 50);
+                results.pkt_class.uora_skipped.p90_ms = prctile(skipped_ms, 90);
+                results.pkt_class.uora_skipped.p99_ms = prctile(skipped_ms, 99);
+                results.pkt_class.uora_skipped.max_ms = max(skipped_ms);
+            else
+                results.pkt_class.uora_skipped.count = 0;
+                results.pkt_class.uora_skipped.ratio = 0;
+                results.pkt_class.uora_skipped.mean_ms = 0;
+                results.pkt_class.uora_skipped.std_ms = 0;
+                results.pkt_class.uora_skipped.min_ms = 0;
+                results.pkt_class.uora_skipped.p10_ms = 0;
+                results.pkt_class.uora_skipped.p50_ms = 0;
+                results.pkt_class.uora_skipped.p90_ms = 0;
+                results.pkt_class.uora_skipped.p99_ms = 0;
+                results.pkt_class.uora_skipped.max_ms = 0;
+            end
+            
+            if ~isempty(uora_used_delays)
+                used_ms = uora_used_delays * slot_to_ms;
+                results.pkt_class.uora_used.count = length(uora_used_delays);
+                results.pkt_class.uora_used.ratio = length(uora_used_delays) / total_completed;
+                results.pkt_class.uora_used.mean_ms = mean(used_ms);
+                results.pkt_class.uora_used.std_ms = std(used_ms);
+                results.pkt_class.uora_used.min_ms = min(used_ms);
+                results.pkt_class.uora_used.p10_ms = prctile(used_ms, 10);
+                results.pkt_class.uora_used.p50_ms = prctile(used_ms, 50);
+                results.pkt_class.uora_used.p90_ms = prctile(used_ms, 90);
+                results.pkt_class.uora_used.p99_ms = prctile(used_ms, 99);
+                results.pkt_class.uora_used.max_ms = max(used_ms);
+            else
+                results.pkt_class.uora_used.count = 0;
+                results.pkt_class.uora_used.ratio = 0;
+                results.pkt_class.uora_used.mean_ms = 0;
+                results.pkt_class.uora_used.std_ms = 0;
+                results.pkt_class.uora_used.min_ms = 0;
+                results.pkt_class.uora_used.p10_ms = 0;
+                results.pkt_class.uora_used.p50_ms = 0;
+                results.pkt_class.uora_used.p90_ms = 0;
+                results.pkt_class.uora_used.p99_ms = 0;
+                results.pkt_class.uora_used.max_ms = 0;
+            end
+            
+            % [2] UORA 스킵 세부: T_hold Hit vs SA Queue
             if ~isempty(thold_hit_delays)
-                results.delay_decomp.thold_hit.mean_ms = mean(thold_hit_delays) * slot_to_ms;
-                results.delay_decomp.thold_hit.count = length(thold_hit_delays);
+                hit_ms = thold_hit_delays * slot_to_ms;
+                results.pkt_class.thold_hit.count = length(thold_hit_delays);
+                results.pkt_class.thold_hit.ratio = length(thold_hit_delays) / total_completed;
+                results.pkt_class.thold_hit.mean_ms = mean(hit_ms);
+                results.pkt_class.thold_hit.std_ms = std(hit_ms);
+                results.pkt_class.thold_hit.min_ms = min(hit_ms);
+                results.pkt_class.thold_hit.p10_ms = prctile(hit_ms, 10);
+                results.pkt_class.thold_hit.p50_ms = prctile(hit_ms, 50);
+                results.pkt_class.thold_hit.p90_ms = prctile(hit_ms, 90);
+                results.pkt_class.thold_hit.p99_ms = prctile(hit_ms, 99);
+                results.pkt_class.thold_hit.max_ms = max(hit_ms);
             else
-                results.delay_decomp.thold_hit.mean_ms = 0;
-                results.delay_decomp.thold_hit.count = 0;
+                results.pkt_class.thold_hit.count = 0;
+                results.pkt_class.thold_hit.ratio = 0;
+                results.pkt_class.thold_hit.mean_ms = 0;
+                results.pkt_class.thold_hit.std_ms = 0;
+                results.pkt_class.thold_hit.min_ms = 0;
+                results.pkt_class.thold_hit.p10_ms = 0;
+                results.pkt_class.thold_hit.p50_ms = 0;
+                results.pkt_class.thold_hit.p90_ms = 0;
+                results.pkt_class.thold_hit.p99_ms = 0;
+                results.pkt_class.thold_hit.max_ms = 0;
             end
             
-            if ~isempty(non_thold_delays)
-                results.delay_decomp.non_thold.mean_ms = mean(non_thold_delays) * slot_to_ms;
-                results.delay_decomp.non_thold.count = length(non_thold_delays);
+            if ~isempty(sa_queue_delays)
+                queue_ms = sa_queue_delays * slot_to_ms;
+                results.pkt_class.sa_queue.count = length(sa_queue_delays);
+                results.pkt_class.sa_queue.ratio = length(sa_queue_delays) / total_completed;
+                results.pkt_class.sa_queue.mean_ms = mean(queue_ms);
+                results.pkt_class.sa_queue.std_ms = std(queue_ms);
+                results.pkt_class.sa_queue.min_ms = min(queue_ms);
+                results.pkt_class.sa_queue.p10_ms = prctile(queue_ms, 10);
+                results.pkt_class.sa_queue.p50_ms = prctile(queue_ms, 50);
+                results.pkt_class.sa_queue.p90_ms = prctile(queue_ms, 90);
+                results.pkt_class.sa_queue.p99_ms = prctile(queue_ms, 99);
+                results.pkt_class.sa_queue.max_ms = max(queue_ms);
             else
-                results.delay_decomp.non_thold.mean_ms = 0;
-                results.delay_decomp.non_thold.count = 0;
+                results.pkt_class.sa_queue.count = 0;
+                results.pkt_class.sa_queue.ratio = 0;
+                results.pkt_class.sa_queue.mean_ms = 0;
+                results.pkt_class.sa_queue.std_ms = 0;
+                results.pkt_class.sa_queue.min_ms = 0;
+                results.pkt_class.sa_queue.p10_ms = 0;
+                results.pkt_class.sa_queue.p50_ms = 0;
+                results.pkt_class.sa_queue.p90_ms = 0;
+                results.pkt_class.sa_queue.p99_ms = 0;
+                results.pkt_class.sa_queue.max_ms = 0;
             end
             
-            % RA vs SA 전송 지연 비교
+            % [3] 전송 타입별: RA vs SA
             if ~isempty(ra_packet_delays)
-                results.delay_decomp.ra_packets.mean_ms = mean(ra_packet_delays) * slot_to_ms;
-                results.delay_decomp.ra_packets.count = length(ra_packet_delays);
+                ra_ms = ra_packet_delays * slot_to_ms;
+                results.pkt_class.ra_tx.count = length(ra_packet_delays);
+                results.pkt_class.ra_tx.ratio = length(ra_packet_delays) / total_completed;
+                results.pkt_class.ra_tx.mean_ms = mean(ra_ms);
+                results.pkt_class.ra_tx.std_ms = std(ra_ms);
+                results.pkt_class.ra_tx.min_ms = min(ra_ms);
+                results.pkt_class.ra_tx.p10_ms = prctile(ra_ms, 10);
+                results.pkt_class.ra_tx.p50_ms = prctile(ra_ms, 50);
+                results.pkt_class.ra_tx.p90_ms = prctile(ra_ms, 90);
+                results.pkt_class.ra_tx.p99_ms = prctile(ra_ms, 99);
+                results.pkt_class.ra_tx.max_ms = max(ra_ms);
             else
-                results.delay_decomp.ra_packets.mean_ms = 0;
-                results.delay_decomp.ra_packets.count = 0;
+                results.pkt_class.ra_tx.count = 0;
+                results.pkt_class.ra_tx.ratio = 0;
+                results.pkt_class.ra_tx.mean_ms = 0;
+                results.pkt_class.ra_tx.std_ms = 0;
+                results.pkt_class.ra_tx.min_ms = 0;
+                results.pkt_class.ra_tx.p10_ms = 0;
+                results.pkt_class.ra_tx.p50_ms = 0;
+                results.pkt_class.ra_tx.p90_ms = 0;
+                results.pkt_class.ra_tx.p99_ms = 0;
+                results.pkt_class.ra_tx.max_ms = 0;
             end
             
             if ~isempty(sa_packet_delays)
-                results.delay_decomp.sa_packets.mean_ms = mean(sa_packet_delays) * slot_to_ms;
-                results.delay_decomp.sa_packets.count = length(sa_packet_delays);
+                sa_tx_ms = sa_packet_delays * slot_to_ms;
+                results.pkt_class.sa_tx.count = length(sa_packet_delays);
+                results.pkt_class.sa_tx.ratio = length(sa_packet_delays) / total_completed;
+                results.pkt_class.sa_tx.mean_ms = mean(sa_tx_ms);
+                results.pkt_class.sa_tx.std_ms = std(sa_tx_ms);
+                results.pkt_class.sa_tx.min_ms = min(sa_tx_ms);
+                results.pkt_class.sa_tx.p10_ms = prctile(sa_tx_ms, 10);
+                results.pkt_class.sa_tx.p50_ms = prctile(sa_tx_ms, 50);
+                results.pkt_class.sa_tx.p90_ms = prctile(sa_tx_ms, 90);
+                results.pkt_class.sa_tx.p99_ms = prctile(sa_tx_ms, 99);
+                results.pkt_class.sa_tx.max_ms = max(sa_tx_ms);
             else
-                results.delay_decomp.sa_packets.mean_ms = 0;
-                results.delay_decomp.sa_packets.count = 0;
+                results.pkt_class.sa_tx.count = 0;
+                results.pkt_class.sa_tx.ratio = 0;
+                results.pkt_class.sa_tx.mean_ms = 0;
+                results.pkt_class.sa_tx.std_ms = 0;
+                results.pkt_class.sa_tx.min_ms = 0;
+                results.pkt_class.sa_tx.p10_ms = 0;
+                results.pkt_class.sa_tx.p50_ms = 0;
+                results.pkt_class.sa_tx.p90_ms = 0;
+                results.pkt_class.sa_tx.p99_ms = 0;
+                results.pkt_class.sa_tx.max_ms = 0;
             end
+            
+            % 하위 호환성: delay_decomp에도 기존 필드 유지
+            results.delay_decomp.thold_hit.count = results.pkt_class.thold_hit.count;
+            results.delay_decomp.thold_hit.ratio = results.pkt_class.thold_hit.ratio;
+            results.delay_decomp.thold_hit.mean_ms = results.pkt_class.thold_hit.mean_ms;
+            
+            results.delay_decomp.non_thold.count = results.pkt_class.uora_used.count + results.pkt_class.sa_queue.count;
+            results.delay_decomp.non_thold.ratio = results.pkt_class.uora_used.ratio + results.pkt_class.sa_queue.ratio;
+            if results.delay_decomp.non_thold.count > 0
+                % uora_used + sa_queue의 가중 평균
+                results.delay_decomp.non_thold.mean_ms = ...
+                    (results.pkt_class.uora_used.mean_ms * results.pkt_class.uora_used.count + ...
+                     results.pkt_class.sa_queue.mean_ms * results.pkt_class.sa_queue.count) / ...
+                    results.delay_decomp.non_thold.count;
+            else
+                results.delay_decomp.non_thold.mean_ms = 0;
+            end
+            
+            results.delay_decomp.ra_packets.count = results.pkt_class.ra_tx.count;
+            results.delay_decomp.ra_packets.mean_ms = results.pkt_class.ra_tx.mean_ms;
+            
+            results.delay_decomp.sa_packets.count = results.pkt_class.sa_tx.count;
+            results.delay_decomp.sa_packets.mean_ms = results.pkt_class.sa_tx.mean_ms;
             
             %% ═══════════════════════════════════════════════════
             %  처리율 및 채널 효율 통계

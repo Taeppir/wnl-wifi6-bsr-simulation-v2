@@ -238,10 +238,26 @@ classdef Simulator < handle
                             % → SA-RU 1개가 이번 TF에서 낭비됨
                             phantom_count = phantom_count + 1;
                             
-                            % Option B: T_hold 유지, 만료까지 계속 SA 시도
-                            % thold_active, thold_expiry, mode 모두 유지
-                            % → 다음 TF에서 다시 SA 할당받아 시도
-                            % (만료는 check_expiry()에서 처리)
+                            % Method에 따른 처리
+                            if strcmp(obj.cfg.thold_method, 'M1')
+                                % M1: Phantom 카운트 체크
+                                sta.thold_phantom_count = sta.thold_phantom_count + 1;
+                                
+                                if sta.thold_phantom_count >= obj.cfg.thold_max_phantom
+                                    % max_phantom 도달 → RA 모드로 전환
+                                    sta.thold_active = false;
+                                    sta.thold_expiry = 0;
+                                    sta.thold_phantom_count = 0;
+                                    sta.mode = 0;  % RA 모드로 전환
+                                    obj.ap.end_thold(sta_idx);
+                                end
+                                % else: T_hold 유지, 다음 기회 더 줌
+                            else
+                                % M0: T_hold 유지, 만료까지 계속 SA 시도
+                                % thold_active, thold_expiry, mode 모두 유지
+                                % → 다음 TF에서 다시 SA 할당받아 시도
+                                % (만료는 check_expiry()에서 처리)
+                            end
                         end
                         
                         obj.stas(sta_idx) = sta;
@@ -252,9 +268,10 @@ classdef Simulator < handle
                         obj.metrics.record_phantom(phantom_count);
                     end
                     
-                    % T_hold Hit 카운트 (THoldManager에 직접 추가)
+                    % T_hold Hit/Phantom 카운트 (THoldManager에 직접 추가)
                     if obj.cfg.thold_enabled
                         obj.thold.hits = obj.thold.hits + hit_count;
+                        obj.thold.phantoms = obj.thold.phantoms + phantom_count;
                     end
                     
                     % ───────────────────────────────────────────
@@ -305,10 +322,14 @@ classdef Simulator < handle
                 results.thold.activations = thold_stats.activations;
                 results.thold.hits = thold_stats.hits;
                 results.thold.expirations = thold_stats.expirations;
+                results.thold.clean_exp = thold_stats.clean_exp;
+                results.thold.exp_with_data = thold_stats.exp_with_data;
+                results.thold.phantoms = thold_stats.phantoms;
                 results.thold.hit_rate = thold_stats.hit_rate;
+                results.thold.phantom_per_activation = thold_stats.phantom_per_activation;
                 results.thold.wasted_slots = thold_stats.wasted_slots;
                 results.thold.wasted_ms = thold_stats.wasted_slots * obj.cfg.slot_duration * 1000;
-                results.thold.phantom_count = obj.metrics.thold_phantom_count;
+                results.thold.phantom_count = obj.metrics.thold_phantom_count;  % 호환성
             end
         end
         
@@ -334,6 +355,7 @@ classdef Simulator < handle
                         
                         % ═══════════════════════════════════════════
                         % 지연 분해용: 도착 시점 상태 기록
+                        % 패킷 분류: UORA 스킵 여부 및 이유
                         % ═══════════════════════════════════════════
                         
                         % T_hold 중에 패킷 도착 처리
@@ -341,20 +363,26 @@ classdef Simulator < handle
                             obj.thold.handle_new_packet(sta, obj.ap, slot);
                             % T_hold Hit! → SA 모드 유지, UORA 스킵
                             pkt.thold_hit = true;
+                            pkt.uora_skipped = true;
+                            pkt.skip_reason = 'thold_hit';
                             pkt.sa_start_slot = slot;
                             pkt.uora_start_slot = 0;  % UORA 안 거침
                             pkt.uora_end_slot = 0;
                         elseif sta.mode == 1
                             % 이미 SA 모드 (큐에 다른 패킷이 있어서)
+                            pkt.thold_hit = false;
+                            pkt.uora_skipped = true;
+                            pkt.skip_reason = 'sa_queue';
                             pkt.sa_start_slot = slot;
                             pkt.uora_start_slot = 0;
                             pkt.uora_end_slot = 0;
-                            pkt.thold_hit = false;
                         else
                             % RA 모드 → UORA 경쟁 필요
+                            pkt.thold_hit = false;
+                            pkt.uora_skipped = false;
+                            pkt.skip_reason = '';
                             pkt.uora_start_slot = slot;
                             pkt.sa_start_slot = 0;
-                            pkt.thold_hit = false;
                         end
                         
                         sta.packets(sta.next_packet_idx) = pkt;
