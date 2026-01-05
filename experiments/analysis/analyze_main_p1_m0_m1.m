@@ -428,7 +428,7 @@ subplot(1, 3, 3);
 data = zeros(length(scenario_names), length(method_labels));
 for sc_idx = 1:length(scenario_names)
     for m_idx = 1:length(method_labels)
-        r = get_result(scenario_names{sc_idx}, 50, method_labels{m_idx});
+        r = get_result(scenario_names{sc_idx}, 30, method_labels{m_idx});
         if ~isempty(r)
             data(sc_idx, m_idx) = r.throughput.total_mbps;
         end
@@ -437,7 +437,7 @@ end
 bar(data);
 set(gca, 'XTickLabel', scenario_names);
 ylabel('Throughput (Mbps)');
-title('처리율 (T\_hold=50ms)');
+title('처리율 (T\_hold=30ms)');
 legend(method_labels, 'Location', 'southwest');
 grid on;
 

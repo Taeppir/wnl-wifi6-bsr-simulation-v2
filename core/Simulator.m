@@ -245,13 +245,13 @@ classdef Simulator < handle
                             % Phantom! T_hold 중인데 패킷 없음
                             % → SA-RU 1개가 이번 TF에서 낭비됨
                             
-                            % M2: waiting_final 상태에서 할당받았지만 패킷 없음 → Clean Exp
+                            % M2: waiting_final 상태에서 할당받았지만 패킷 없음 → Phantom
                             if sta.thold_waiting_final
                                 phantom_count = phantom_count + 1;
                                 sta.thold_waiting_final = false;
                                 sta.mode = 0;  % RA 모드로 전환
                                 obj.ap.end_thold(sta_idx);
-                                obj.thold.clean_exp = obj.thold.clean_exp + 1;
+                                % M2: phantoms만 카운트 (expirations, clean_exp 안 함)
                             elseif sta.thold_active
                                 % M0/M1: T_hold 중 phantom
                                 phantom_count = phantom_count + 1;
@@ -292,7 +292,14 @@ classdef Simulator < handle
                                 sta.thold_waiting_final = false;
                                 sta.mode = 0;
                                 obj.ap.end_thold(i);
-                                obj.thold.clean_exp = obj.thold.clean_exp + 1;
+                                
+                                % M2: 버퍼 상태에 따라 분류 (expirations 안 씀)
+                                if sta.queue_size == 0
+                                    obj.thold.clean_exp = obj.thold.clean_exp + 1;
+                                else
+                                    obj.thold.exp_with_data = obj.thold.exp_with_data + 1;
+                                end
+                                
                                 obj.stas(i) = sta;
                             end
                         end
