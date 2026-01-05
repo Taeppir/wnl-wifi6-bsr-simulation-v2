@@ -31,6 +31,7 @@ classdef STA < handle
         thold_active    % T_hold 타이머 활성화
         thold_expiry    % T_hold 만료 슬롯
         thold_phantom_count  % 현재 activation의 Phantom 횟수
+        thold_waiting_final  % M2: 만료 후 최종 할당 대기 중
         
         %% 통계
         tx_success      % 성공 전송 수
@@ -72,6 +73,7 @@ classdef STA < handle
             obj.thold_active = false;
             obj.thold_expiry = 0;
             obj.thold_phantom_count = 0;
+            obj.thold_waiting_final = false;
             
             % 통계 초기화
             obj.tx_success = 0;
@@ -93,6 +95,7 @@ classdef STA < handle
             obj.thold_active = false;
             obj.thold_expiry = 0;
             obj.thold_phantom_count = 0;
+            obj.thold_waiting_final = false;
         end
         
         %% ═══════════════════════════════════════════════════

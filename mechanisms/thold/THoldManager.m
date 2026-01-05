@@ -78,8 +78,15 @@ classdef THoldManager < handle
                     % T_hold 만료!
                     obj.expirations = obj.expirations + 1;
                     
-                    if sta.queue_size == 0
-                        % Clean Expiration: 버퍼가 여전히 비어있음 → RA 모드로 전환
+                    if strcmp(obj.method, 'M2')
+                        % M2: 만료 시 바로 전환하지 않고 waiting_final 상태로
+                        sta.thold_active = false;
+                        sta.thold_expiry = 0;
+                        sta.thold_waiting_final = true;
+                        % mode는 SA 유지, 다음 schedule_sa_ru에서 처리됨
+                        
+                    elseif sta.queue_size == 0
+                        % M0/M1: Clean Expiration - 버퍼가 여전히 비어있음 → RA 모드로 전환
                         sta.mode = 0;
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
@@ -92,8 +99,7 @@ classdef THoldManager < handle
                         % 낭비된 슬롯 기록 (전체 T_hold 기간 기다렸지만 패킷 안 옴)
                         obj.wasted_slots = obj.wasted_slots + obj.thold_slots;
                     else
-                        % Expiration with Data: 버퍼에 데이터 있음
-                        % (T_hold 중 패킷 도착했지만 SA 할당 못 받음)
+                        % M0/M1: Expiration with Data - 버퍼에 데이터 있음
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
                         

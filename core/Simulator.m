@@ -233,34 +233,69 @@ classdef Simulator < handle
                                 obj.ap.end_thold(sta_idx);
                                 % mode=1 유지 (SA 전송 후 상태는 process_tx_results에서)
                             end
+                            
+                            % M2: waiting_final 상태에서 할당받아 전송 성공 → Hit!
+                            if sta.thold_waiting_final
+                                hit_count = hit_count + 1;
+                                sta.thold_waiting_final = false;
+                                obj.ap.end_thold(sta_idx);
+                                % mode=1 유지 (버퍼에 데이터 있으니까 SA 계속)
+                            end
                         else
                             % Phantom! T_hold 중인데 패킷 없음
                             % → SA-RU 1개가 이번 TF에서 낭비됨
-                            phantom_count = phantom_count + 1;
                             
-                            % Method에 따른 처리
-                            if strcmp(obj.cfg.thold_method, 'M1')
-                                % M1: Phantom 카운트 체크
-                                sta.thold_phantom_count = sta.thold_phantom_count + 1;
+                            % M2: waiting_final 상태에서 할당받았지만 패킷 없음 → Clean Exp
+                            if sta.thold_waiting_final
+                                phantom_count = phantom_count + 1;
+                                sta.thold_waiting_final = false;
+                                sta.mode = 0;  % RA 모드로 전환
+                                obj.ap.end_thold(sta_idx);
+                                obj.thold.clean_exp = obj.thold.clean_exp + 1;
+                            elseif sta.thold_active
+                                % M0/M1: T_hold 중 phantom
+                                phantom_count = phantom_count + 1;
                                 
-                                if sta.thold_phantom_count >= obj.cfg.thold_max_phantom
-                                    % max_phantom 도달 → RA 모드로 전환
-                                    sta.thold_active = false;
-                                    sta.thold_expiry = 0;
-                                    sta.thold_phantom_count = 0;
-                                    sta.mode = 0;  % RA 모드로 전환
-                                    obj.ap.end_thold(sta_idx);
+                                % Method에 따른 처리
+                                if strcmp(obj.cfg.thold_method, 'M1')
+                                    % M1: Phantom 카운트 체크
+                                    sta.thold_phantom_count = sta.thold_phantom_count + 1;
+                                    
+                                    if sta.thold_phantom_count >= obj.cfg.thold_max_phantom
+                                        % max_phantom 도달 → RA 모드로 전환
+                                        sta.thold_active = false;
+                                        sta.thold_expiry = 0;
+                                        sta.thold_phantom_count = 0;
+                                        sta.mode = 0;  % RA 모드로 전환
+                                        obj.ap.end_thold(sta_idx);
+                                    end
+                                    % else: T_hold 유지, 다음 기회 더 줌
+                                else
+                                    % M0: T_hold 유지, 만료까지 계속 SA 시도
+                                    % thold_active, thold_expiry, mode 모두 유지
+                                    % → 다음 TF에서 다시 SA 할당받아 시도
+                                    % (만료는 check_expiry()에서 처리)
                                 end
-                                % else: T_hold 유지, 다음 기회 더 줌
-                            else
-                                % M0: T_hold 유지, 만료까지 계속 SA 시도
-                                % thold_active, thold_expiry, mode 모두 유지
-                                % → 다음 TF에서 다시 SA 할당받아 시도
-                                % (만료는 check_expiry()에서 처리)
                             end
                         end
                         
                         obj.stas(sta_idx) = sta;
+                    end
+                    
+                    % M2: 할당 못 받은 waiting_final STA → RA 모드로 전환
+                    if obj.cfg.thold_enabled && strcmp(obj.cfg.thold_method, 'M2')
+                        assigned_sta_idxs = [sa_assignments.sta_idx];
+                        for i = 1:length(obj.stas)
+                            sta = obj.stas(i);
+                            if sta.thold_waiting_final && ~ismember(i, assigned_sta_idxs)
+                                % 할당 못 받음 → RA 전환
+                                sta.thold_waiting_final = false;
+                                sta.mode = 0;
+                                obj.ap.end_thold(i);
+                                obj.thold.clean_exp = obj.thold.clean_exp + 1;
+                                obj.stas(i) = sta;
+                            end
+                        end
                     end
                     
                     % 메트릭에 Hit/Phantom 기록
@@ -423,7 +458,7 @@ classdef Simulator < handle
                 end
             end
             
-            % BSR 큰 순서로 정렬
+            % BSR 큰 순서로 정렬 (이전 연구와 일관성)
             if ~isempty(bsr_stas)
                 [~, sort_idx] = sort([bsr_stas.bsr], 'descend');
                 bsr_stas = bsr_stas(sort_idx);
@@ -461,35 +496,60 @@ classdef Simulator < handle
                 end
             end
             
-            %% Step 3: 남은 SA-RU → T_hold 단말 (만료 임박 순)
+            %% Step 3: 남은 SA-RU → T_hold 단말
             remaining_ru = num_sa_ru - assigned_count;
             
-            if remaining_ru > 0
-                % T_hold 중인 STA 수집 (BSR=0인 것만)
-                thold_stas = [];
-                for i = 1:length(obj.stas)
-                    if obj.stas(i).mode == 1 && obj.stas(i).thold_active
-                        bsr_value = obj.ap.bsr_table(i);
-                        if bsr_value == 0  % BSR>0은 이미 위에서 처리됨
-                            thold_stas = [thold_stas; struct('sta_idx', i, 'expiry', obj.stas(i).thold_expiry)];
+            if remaining_ru > 0 && obj.cfg.thold_enabled
+                if strcmp(obj.cfg.thold_method, 'M2')
+                    % M2: waiting_final 상태인 STA에만 할당 (만료 후 1회)
+                    waiting_stas = [];
+                    for i = 1:length(obj.stas)
+                        if obj.stas(i).mode == 1 && obj.stas(i).thold_waiting_final
+                            bsr_value = obj.ap.bsr_table(i);
+                            if bsr_value == 0  % BSR>0은 이미 위에서 처리됨
+                                waiting_stas = [waiting_stas; struct('sta_idx', i)];
+                            end
                         end
                     end
-                end
-                
-                % 만료 임박 순으로 정렬 (expiry 작은 순)
-                if ~isempty(thold_stas)
-                    expiries = [thold_stas.expiry];
-                    [~, sort_idx] = sort(expiries, 'ascend');
-                    thold_stas = thold_stas(sort_idx);
                     
                     % 남은 SA-RU만큼 할당
-                    num_thold_assign = min(remaining_ru, length(thold_stas));
-                    for k = 1:num_thold_assign
-                        sta_idx = thold_stas(k).sta_idx;
-                        assigned_count = assigned_count + 1;
+                    if ~isempty(waiting_stas)
+                        num_waiting_assign = min(remaining_ru, length(waiting_stas));
+                        for k = 1:num_waiting_assign
+                            sta_idx = waiting_stas(k).sta_idx;
+                            assigned_count = assigned_count + 1;
+                            
+                            assignments(end+1).sta_idx = sta_idx;
+                            assignments(end).ru_idx = ru_idx_base + assigned_count;
+                        end
+                    end
+                else
+                    % M0/M1: T_hold 중인 STA에 할당 (만료 임박 순)
+                    thold_stas = [];
+                    for i = 1:length(obj.stas)
+                        if obj.stas(i).mode == 1 && obj.stas(i).thold_active
+                            bsr_value = obj.ap.bsr_table(i);
+                            if bsr_value == 0  % BSR>0은 이미 위에서 처리됨
+                                thold_stas = [thold_stas; struct('sta_idx', i, 'expiry', obj.stas(i).thold_expiry)];
+                            end
+                        end
+                    end
+                    
+                    % 만료 임박 순으로 정렬 (expiry 작은 순)
+                    if ~isempty(thold_stas)
+                        expiries = [thold_stas.expiry];
+                        [~, sort_idx] = sort(expiries, 'ascend');
+                        thold_stas = thold_stas(sort_idx);
                         
-                        assignments(end+1).sta_idx = sta_idx;
-                        assignments(end).ru_idx = ru_idx_base + assigned_count;
+                        % 남은 SA-RU만큼 할당
+                        num_thold_assign = min(remaining_ru, length(thold_stas));
+                        for k = 1:num_thold_assign
+                            sta_idx = thold_stas(k).sta_idx;
+                            assigned_count = assigned_count + 1;
+                            
+                            assignments(end+1).sta_idx = sta_idx;
+                            assignments(end).ru_idx = ru_idx_base + assigned_count;
+                        end
                     end
                 end
             end
