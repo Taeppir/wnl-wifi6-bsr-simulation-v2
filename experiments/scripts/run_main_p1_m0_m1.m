@@ -40,7 +40,7 @@ scenarios.A.mu_on = scenarios.A.rho * scenarios.A.mu_off / (1 - scenarios.A.rho)
 scenarios.B.name = 'B';
 scenarios.B.description = 'Video-like';
 scenarios.B.lambda = 200;
-scenarios.B.rho = 0.40;
+scenarios.B.rho = 0.50;
 scenarios.B.mu_off = 0.050;  % 50ms
 scenarios.B.mu_on = scenarios.B.rho * scenarios.B.mu_off / (1 - scenarios.B.rho);  % 33ms
 
@@ -64,7 +64,7 @@ methods = {
 };
 
 % 결과 저장 경로
-output_dir = 'results/main_m0_m1';
+output_dir = 'results/main_m0_m1_fixed';
 if ~exist(output_dir, 'dir')
     mkdir(output_dir);
 end
