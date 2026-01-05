@@ -100,6 +100,9 @@ classdef THoldManager < handle
                         obj.wasted_slots = obj.wasted_slots + obj.thold_slots;
                     else
                         % M0/M1: Expiration with Data - 버퍼에 데이터 있음
+                        % T_hold 중 패킷 도착했지만 SA 할당 못 받은 경우
+                        % → RA 모드로 전환하여 UORA 참여 가능하게 함!
+                        sta.mode = 0;  % 버그 수정: RA 모드로 전환!
                         sta.thold_active = false;
                         sta.thold_expiry = 0;
                         
@@ -107,8 +110,6 @@ classdef THoldManager < handle
                         ap.end_thold(i);
                         
                         obj.exp_with_data = obj.exp_with_data + 1;
-                        
-                        % Note: mode=1 유지 (버퍼에 데이터 있으니까 SA 계속)
                     end
                     
                     stas(i) = sta;
