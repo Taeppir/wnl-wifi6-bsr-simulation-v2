@@ -794,73 +794,79 @@ sgtitle(sprintf('Figure 6: Trade-off 분석 (T_{hold}=%dms)', th), 'FontSize', 1
 saveas(gcf, fullfile(output_dir, 'fig06_tradeoff.png'));
 fprintf('  ✓ Figure 6: Trade-off 저장\n');
 
-%% Figure 7: Throughput 비교 (히스토그램, T_hold=50ms 대표)
-figure('Name', 'Fig 7: Throughput', 'Position', [100 100 1200 400]);
+%% Figure 7: Throughput 비교 (3x3 - 모든 T_hold)
+figure('Name', 'Fig 7: Throughput', 'Position', [100 100 1400 1000]);
 
-th = 50;
-methods_labels = {'Baseline', 'M0', 'M1(5)', 'M2'};
+methods_labels = {'Base', 'M0', 'M1', 'M2'};
 
-for sc_idx = 1:3
-    sc = scenario_names{sc_idx};
-    subplot(1, 3, sc_idx);
+for th_idx = 1:3
+    th = thold_values(th_idx);
     
-    [base_t, ~] = get_metric_avg(results_m0m1, sc, 0, 'Baseline', 'throughput.total_mbps', num_seeds);
-    [m0_t, ~] = get_metric_avg(results_m0m1, sc, th, 'M0', 'throughput.total_mbps', num_seeds);
-    [m1_t, ~] = get_metric_avg(results_m0m1, sc, th, 'M1(5)', 'throughput.total_mbps', num_seeds);
-    [m2_t, ~] = get_metric_avg(results_m2, sc, th, 'M2', 'throughput.total_mbps', num_seeds);
-    
-    data = [base_t, m0_t, m1_t, m2_t];
-    b = bar(data, 'FaceColor', 'flat');
-    b.CData = [colors.Baseline; colors.M0; colors.M1; colors.M2];
-    
-    set(gca, 'XTickLabel', methods_labels);
-    ylabel('Throughput (Mbps)');
-    title(sprintf('%s: %s', sc, scenario_desc{sc_idx}));
-    ylim([0 max(data)*1.1]);
-    grid on;
-    
-    % 값 표시
-    for i = 1:4
-        text(i, data(i)+max(data)*0.02, sprintf('%.2f', data(i)), ...
-            'HorizontalAlignment', 'center', 'FontSize', 9);
+    for sc_idx = 1:3
+        sc = scenario_names{sc_idx};
+        subplot(3, 3, (th_idx-1)*3 + sc_idx);
+        
+        [base_t, ~] = get_metric_avg(results_m0m1, sc, 0, 'Baseline', 'throughput.total_mbps', num_seeds);
+        [m0_t, ~] = get_metric_avg(results_m0m1, sc, th, 'M0', 'throughput.total_mbps', num_seeds);
+        [m1_t, ~] = get_metric_avg(results_m0m1, sc, th, 'M1(5)', 'throughput.total_mbps', num_seeds);
+        [m2_t, ~] = get_metric_avg(results_m2, sc, th, 'M2', 'throughput.total_mbps', num_seeds);
+        
+        data = [base_t, m0_t, m1_t, m2_t];
+        b = bar(data, 'FaceColor', 'flat');
+        b.CData = [colors.Baseline; colors.M0; colors.M1; colors.M2];
+        
+        set(gca, 'XTickLabel', methods_labels);
+        ylabel('Mbps');
+        title(sprintf('%s T_{hold}=%dms', sc, th));
+        ylim([0 max(data)*1.15]);
+        grid on;
+        
+        % 값 표시
+        for i = 1:4
+            text(i, data(i)+max(data)*0.02, sprintf('%.1f', data(i)), ...
+                'HorizontalAlignment', 'center', 'FontSize', 7);
+        end
     end
 end
-sgtitle(sprintf('Figure 7: Throughput 비교 (T_{hold}=%dms)', th), 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle('Figure 7: Throughput 비교', 'FontSize', 14, 'FontWeight', 'bold');
 saveas(gcf, fullfile(output_dir, 'fig07_throughput.png'));
 fprintf('  ✓ Figure 7: Throughput 저장\n');
 
-%% Figure 8: Fairness 비교 (히스토그램, T_hold=50ms 대표)
-figure('Name', 'Fig 8: Fairness', 'Position', [100 100 1200 400]);
+%% Figure 8: Fairness 비교 (3x3 - 모든 T_hold)
+figure('Name', 'Fig 8: Fairness', 'Position', [100 100 1400 1000]);
 
-th = 50;
-methods_labels = {'Baseline', 'M0', 'M1(5)', 'M2'};
+methods_labels = {'Base', 'M0', 'M1', 'M2'};
 
-for sc_idx = 1:3
-    sc = scenario_names{sc_idx};
-    subplot(1, 3, sc_idx);
+for th_idx = 1:3
+    th = thold_values(th_idx);
     
-    [base_f, ~] = get_metric_avg(results_m0m1, sc, 0, 'Baseline', 'fairness.jain_index', num_seeds);
-    [m0_f, ~] = get_metric_avg(results_m0m1, sc, th, 'M0', 'fairness.jain_index', num_seeds);
-    [m1_f, ~] = get_metric_avg(results_m0m1, sc, th, 'M1(5)', 'fairness.jain_index', num_seeds);
-    [m2_f, ~] = get_metric_avg(results_m2, sc, th, 'M2', 'fairness.jain_index', num_seeds);
-    
-    data = [base_f, m0_f, m1_f, m2_f];
-    b = bar(data, 'FaceColor', 'flat');
-    b.CData = [colors.Baseline; colors.M0; colors.M1; colors.M2];
-    
-    set(gca, 'XTickLabel', methods_labels);
-    ylabel('Jain''s Fairness Index');
-    title(sprintf('%s: %s', sc, scenario_desc{sc_idx}));
-    ylim([0.9 1.0]);  % Fairness는 0.9~1.0 범위로
-    grid on;
-    
-    % 값 표시
-    for i = 1:4
-        text(i, data(i)+0.002, sprintf('%.4f', data(i)), ...
-            'HorizontalAlignment', 'center', 'FontSize', 8);
+    for sc_idx = 1:3
+        sc = scenario_names{sc_idx};
+        subplot(3, 3, (th_idx-1)*3 + sc_idx);
+        
+        [base_f, ~] = get_metric_avg(results_m0m1, sc, 0, 'Baseline', 'fairness.jain_index', num_seeds);
+        [m0_f, ~] = get_metric_avg(results_m0m1, sc, th, 'M0', 'fairness.jain_index', num_seeds);
+        [m1_f, ~] = get_metric_avg(results_m0m1, sc, th, 'M1(5)', 'fairness.jain_index', num_seeds);
+        [m2_f, ~] = get_metric_avg(results_m2, sc, th, 'M2', 'fairness.jain_index', num_seeds);
+        
+        data = [base_f, m0_f, m1_f, m2_f];
+        b = bar(data, 'FaceColor', 'flat');
+        b.CData = [colors.Baseline; colors.M0; colors.M1; colors.M2];
+        
+        set(gca, 'XTickLabel', methods_labels);
+        ylabel('Jain Index');
+        title(sprintf('%s T_{hold}=%dms', sc, th));
+        ylim([0.9 1.0]);
+        grid on;
+        
+        % 값 표시
+        for i = 1:4
+            text(i, data(i)+0.002, sprintf('%.4f', data(i)), ...
+                'HorizontalAlignment', 'center', 'FontSize', 6);
+        end
     end
 end
-sgtitle(sprintf('Figure 8: Jain''s Fairness Index 비교 (T_{hold}=%dms)', th), 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle('Figure 8: Jain''s Fairness Index 비교', 'FontSize', 14, 'FontWeight', 'bold');
 saveas(gcf, fullfile(output_dir, 'fig08_fairness.png'));
 fprintf('  ✓ Figure 8: Fairness 저장\n');
 
