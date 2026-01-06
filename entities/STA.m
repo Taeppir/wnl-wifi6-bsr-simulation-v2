@@ -30,6 +30,8 @@ classdef STA < handle
         %% T_hold 상태
         thold_active    % T_hold 타이머 활성화
         thold_expiry    % T_hold 만료 슬롯
+        thold_phantom_count  % 현재 activation의 Phantom 횟수
+        thold_waiting_final  % M2: 만료 후 최종 할당 대기 중
         
         %% 통계
         tx_success      % 성공 전송 수
@@ -70,6 +72,8 @@ classdef STA < handle
             % T_hold 초기화
             obj.thold_active = false;
             obj.thold_expiry = 0;
+            obj.thold_phantom_count = 0;
+            obj.thold_waiting_final = false;
             
             % 통계 초기화
             obj.tx_success = 0;
@@ -90,6 +94,8 @@ classdef STA < handle
             obj.attempting = false;
             obj.thold_active = false;
             obj.thold_expiry = 0;
+            obj.thold_phantom_count = 0;
+            obj.thold_waiting_final = false;
         end
         
         %% ═══════════════════════════════════════════════════
@@ -133,7 +139,22 @@ classdef STA < handle
             pkt.sa_start_slot = 0;      % SA 모드 진입 슬롯
             
             % 전송 정보
-            pkt.tx_type = '';           % 'ra' | 'sa' | 'sa_thold'
+            pkt.tx_type = '';           % 'ra' | 'sa'
+            
+            %% ═══════════════════════════════════════════════════
+            %  패킷 분류 (UORA 스킵 여부)
+            %  ═══════════════════════════════════════════════════
+            
+            % UORA 스킵 여부 (T_hold hit + SA queue 모두 포함)
+            pkt.uora_skipped = false;
+            
+            % 스킵 이유
+            %   'thold_hit': T_hold 중에 도착 → UORA 스킵
+            %   'sa_queue':  이미 SA 모드 (큐에 다른 패킷) → UORA 스킵
+            %   '':          RA 모드 → UORA 경쟁 필요
+            pkt.skip_reason = '';
+            
+            % 하위 호환성 (기존 thold_hit 필드 유지)
             pkt.thold_hit = false;      % T_hold Hit으로 UORA 회피 여부
             
             %% ═══════════════════════════════════════════════════

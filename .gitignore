@@ -1,5 +1,5 @@
 
 results/
-.mat
-.fig
-.png
+*.mat
+*.fig
+*.png

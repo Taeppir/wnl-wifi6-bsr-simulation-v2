@@ -51,6 +51,16 @@ function cfg = config_default()
     cfg.thold_enabled = true;        % T_hold 활성화
     cfg.thold_value = 0.010;         % T_hold 값 (10 ms)
     cfg.thold_policy = 'fixed';      % 정책: 'fixed' | 'adaptive'
+    cfg.thold_method = 'M0';         % Method: 'M0' | 'M1' | 'M2'
+                                     %   M0: Phantom 무제한
+                                     %   M1: Phantom max_phantom회 제한
+                                     %   M2: T_hold 동안 스킵, 만료 시 1회만 할당
+                                     % M0: Original (Phantom 시 T_hold 유지, 만료까지)
+                                     % M1: Immediate Exit (max_phantom 초과 시 RA 전환)
+    cfg.thold_max_phantom = 1;       % M1에서 허용하는 최대 Phantom 횟수
+                                     % 1: 1회 Phantom 후 RA 전환
+                                     % 3: 3회까지 허용 후 RA 전환
+                                     % Inf: M0과 동일 (무제한)
     
     %% ═══════════════════════════════════════════════════
     %  트래픽 설정
