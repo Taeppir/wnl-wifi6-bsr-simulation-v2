@@ -110,6 +110,11 @@ for sc_idx = 1:num_scenarios
         uora_success = [];
         uora_collision = [];
         
+        % Throughput & Packet 관련
+        throughputs = [];
+        pkt_generated = [];
+        pkt_completed = [];
+        
         for s = 1:num_seeds
             field_name = sprintf('%s_%s_s%d', sc_key, method, s);
             
@@ -143,6 +148,17 @@ for sc_idx = 1:num_scenarios
                     if isfield(r.uora, 'total_success'), uora_success(end+1) = r.uora.total_success; end
                     if isfield(r.uora, 'total_collision'), uora_collision(end+1) = r.uora.total_collision; end
                 end
+                
+                % Throughput 통계
+                if isfield(r, 'throughput') && isfield(r.throughput, 'total_mbps')
+                    throughputs(end+1) = r.throughput.total_mbps;
+                end
+                
+                % Packet 통계
+                if isfield(r, 'packets')
+                    if isfield(r.packets, 'generated'), pkt_generated(end+1) = r.packets.generated; end
+                    if isfield(r.packets, 'completed'), pkt_completed(end+1) = r.packets.completed; end
+                end
             end
         end
         
@@ -159,6 +175,9 @@ for sc_idx = 1:num_scenarios
         if isempty(hit_rates), hit_rates = NaN; end
         if isempty(uora_success), uora_success = NaN; end
         if isempty(uora_collision), uora_collision = NaN; end
+        if isempty(throughputs), throughputs = NaN; end
+        if isempty(pkt_generated), pkt_generated = NaN; end
+        if isempty(pkt_completed), pkt_completed = NaN; end
         
         data.(sc_key).(method).delay_mean = mean(delays);
         data.(sc_key).(method).delay_mean_std = std(delays);
@@ -175,6 +194,15 @@ for sc_idx = 1:num_scenarios
         
         data.(sc_key).(method).uora_success = mean(uora_success);
         data.(sc_key).(method).uora_collision = mean(uora_collision);
+        
+        data.(sc_key).(method).throughput = mean(throughputs);
+        data.(sc_key).(method).pkt_generated = mean(pkt_generated);
+        data.(sc_key).(method).pkt_completed = mean(pkt_completed);
+        if ~isnan(mean(pkt_generated)) && ~isnan(mean(pkt_completed)) && mean(pkt_generated) > 0
+            data.(sc_key).(method).completion_rate = mean(pkt_completed) / mean(pkt_generated) * 100;
+        else
+            data.(sc_key).(method).completion_rate = NaN;
+        end
     end
 end
 
@@ -240,8 +268,19 @@ for sc_idx = 1:num_scenarios
         hr = hr * 100;
     end
     
-    fprintf('│    %s     │ %10.0f │ %10.0f │ %10.0f │ %8.1f%%  │\n', ...
-        sc_label, d.activations, d.hits, d.phantoms, hr);
+    % NaN 처리
+    act_str = 'N/A';
+    hits_str = 'N/A';
+    phan_str = 'N/A';
+    hr_str = 'N/A';
+    
+    if ~isnan(d.activations), act_str = sprintf('%10.0f', d.activations); end
+    if ~isnan(d.hits), hits_str = sprintf('%10.0f', d.hits); end
+    if ~isnan(d.phantoms), phan_str = sprintf('%10.0f', d.phantoms); end
+    if ~isnan(hr), hr_str = sprintf('%8.1f%%', hr); end
+    
+    fprintf('│    %s     │ %10s │ %10s │ %10s │ %10s │\n', ...
+        sc_label, act_str, hits_str, phan_str, hr_str);
 end
 fprintf('└──────────┴────────────┴────────────┴────────────┴────────────┘\n\n');
 
@@ -282,7 +321,37 @@ end
 fprintf('└──────────┴──────────┴────────────┴────────────┴────────────┴────────────┘\n\n');
 
 %% ═══════════════════════════════════════════════════════════════════════════
-%  PART 5: 한계 분석
+%  PART 5: Throughput & Packet 통계
+%  ═══════════════════════════════════════════════════════════════════════════
+fprintf('╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗\n');
+fprintf('║                                     Throughput & Packet 통계                                                     ║\n');
+fprintf('╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝\n\n');
+
+fprintf('┌──────────┬──────────┬────────────┬────────────┬────────────┬────────────┐\n');
+fprintf('│ 시나리오  │ Method   │ Throughput │ Generated  │ Completed  │ Comp Rate  │\n');
+fprintf('│          │          │ (Mbps)     │            │            │            │\n');
+fprintf('├──────────┼──────────┼────────────┼────────────┼────────────┼────────────┤\n');
+
+for sc_idx = 1:num_scenarios
+    sc_key = scenario_keys{sc_idx};
+    sc_label = scenario_labels{sc_idx};
+    
+    for m_idx = 1:length(methods)
+        method = methods{m_idx};
+        d = data.(sc_key).(method);
+        
+        fprintf('│    %s     │ %-8s │ %10.2f │ %10.0f │ %10.0f │ %8.1f%%  │\n', ...
+            sc_label, method, d.throughput, d.pkt_generated, d.pkt_completed, d.completion_rate);
+    end
+    
+    if sc_idx < num_scenarios
+        fprintf('├──────────┼──────────┼────────────┼────────────┼────────────┼────────────┤\n');
+    end
+end
+fprintf('└──────────┴──────────┴────────────┴────────────┴────────────┴────────────┘\n\n');
+
+%% ═══════════════════════════════════════════════════════════════════════════
+%  PART 6: 한계 분석
 %  ═══════════════════════════════════════════════════════════════════════════
 fprintf('╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗\n');
 fprintf('║                                         한계 분석                                                                ║\n');
@@ -342,14 +411,20 @@ for sc_idx = 1:num_scenarios
         field_name = sprintf('%s_Baseline_s%d', sc_key, s);
         if isfield(results.runs, field_name)
             r = results.runs.(field_name);
-            if isfield(r, 'delay') && isfield(r.delay, 'all_delays_ms')
-                delays_base = [delays_base; r.delay.all_delays_ms(:)];
+            if isfield(r, 'delay')
+                if isfield(r.delay, 'all_ms')
+                    delays_base = [delays_base; r.delay.all_ms(:)];
+                elseif isfield(r.delay, 'all_delays_ms')
+                    delays_base = [delays_base; r.delay.all_delays_ms(:)];
+                end
             end
         end
     end
     if ~isempty(delays_base)
-        [f, x] = ecdf(delays_base);
-        plot(x, f, '-', 'Color', colors.Baseline, 'LineWidth', 2, 'DisplayName', 'Baseline');
+        % 수동 CDF 계산
+        x_base = sort(delays_base);
+        f_base = (1:length(x_base))' / length(x_base);
+        plot(x_base, f_base, '-', 'Color', colors.Baseline, 'LineWidth', 2, 'DisplayName', 'Baseline');
     end
     
     % M2
@@ -358,14 +433,20 @@ for sc_idx = 1:num_scenarios
         field_name = sprintf('%s_M2_s%d', sc_key, s);
         if isfield(results.runs, field_name)
             r = results.runs.(field_name);
-            if isfield(r, 'delay') && isfield(r.delay, 'all_delays_ms')
-                delays_m2 = [delays_m2; r.delay.all_delays_ms(:)];
+            if isfield(r, 'delay')
+                if isfield(r.delay, 'all_ms')
+                    delays_m2 = [delays_m2; r.delay.all_ms(:)];
+                elseif isfield(r.delay, 'all_delays_ms')
+                    delays_m2 = [delays_m2; r.delay.all_delays_ms(:)];
+                end
             end
         end
     end
     if ~isempty(delays_m2)
-        [f, x] = ecdf(delays_m2);
-        plot(x, f, '-', 'Color', colors.M2, 'LineWidth', 2, 'DisplayName', 'M2');
+        % 수동 CDF 계산
+        x_m2 = sort(delays_m2);
+        f_m2 = (1:length(x_m2))' / length(x_m2);
+        plot(x_m2, f_m2, '-', 'Color', colors.M2, 'LineWidth', 2, 'DisplayName', 'M2');
     end
     
     % Reference lines
