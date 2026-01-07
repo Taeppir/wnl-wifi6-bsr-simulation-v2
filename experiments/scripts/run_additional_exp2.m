@@ -154,8 +154,10 @@ for sc_idx = 1:length(scenario_names)
                 cfg.mu_on = sc.mu_on;
                 cfg.mu_off = sc.mu_off;
                 cfg.pareto_alpha = 1.5;
+            else
+                % Poisson인 경우 poisson_rate 설정 필요
+                cfg.poisson_rate = sc.lambda;
             end
-            % Poisson인 경우 lambda만 설정하면 됨
             
             % 시뮬레이션 설정
             cfg.simulation_time = sim_time;
@@ -190,6 +192,11 @@ for sc_idx = 1:length(scenario_names)
             fprintf('완료 (%.1fs)\n', elapsed);
         end
     end
+    
+    % 시나리오 완료 후 중간 저장 (안전)
+    output_file = fullfile(output_dir, 'results.mat');
+    save(output_file, 'results');
+    fprintf('  ✓ 시나리오 %s 완료, 중간 저장: %s\n', sc.name, output_file);
 end
 
 total_elapsed = toc(total_start);
