@@ -11,8 +11,8 @@ fprintf('║            SA-RU 활용률 분석                                  
 fprintf('╚══════════════════════════════════════════════════════════════════╝\n\n');
 
 %% 데이터 로드
-m0m1_file = 'results/main_m0_m1/results.mat';
-m2_file = 'results/main_m2/results.mat';
+m0m1_file = 'results/main_m0_m1_final/results.mat';
+m2_file = 'results/main_m2_final/results.mat';
 
 load(m0m1_file, 'results'); results_m0m1 = results;
 load(m2_file, 'results'); results_m2 = results;
@@ -22,7 +22,7 @@ fprintf('[데이터 로드 완료]\n\n');
 scenarios = {'A', 'B', 'C'};
 scenario_desc = {'VoIP-like (21%)', 'Video-like (69%)', 'IoT-like (42%)'};
 thold_values = [30, 50, 70];
-num_seeds = 3;
+num_seeds = 10;
 
 % 색상 (지연 그래프와 동일하게)
 colors.Baseline = [0.5 0.5 0.5];           % 회색 - 기존 방식
