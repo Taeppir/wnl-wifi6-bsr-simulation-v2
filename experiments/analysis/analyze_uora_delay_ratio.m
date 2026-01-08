@@ -14,7 +14,7 @@ fprintf('[데이터 로드 완료]\n\n');
 
 %% 설정
 scenarios = {'A', 'B', 'C'};
-num_seeds = 10;
+num_seeds = 5;
 
 output_dir = 'results/figures_delay';
 if ~exist(output_dir, 'dir'), mkdir(output_dir); end

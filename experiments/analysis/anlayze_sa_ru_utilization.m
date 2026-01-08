@@ -22,7 +22,7 @@ fprintf('[데이터 로드 완료]\n\n');
 scenarios = {'A', 'B', 'C'};
 scenario_desc = {'VoIP-like (21%)', 'Video-like (69%)', 'IoT-like (42%)'};
 thold_values = [30, 50, 70];
-num_seeds = 10;
+num_seeds = 5;
 
 % 색상 (지연 그래프와 동일하게)
 colors.Baseline = [0.5 0.5 0.5];           % 회색 - 기존 방식
