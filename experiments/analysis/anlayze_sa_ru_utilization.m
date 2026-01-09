@@ -2,7 +2,6 @@
 % SA-RU 활용률 막대그래프 (시나리오별 1x3)
 % 
 % SA-RU 활용률 = SA-RU 전송 성공 / SA-RU 할당 횟수
-%            = 1 - Phantom Rate
 
 clear; clc;
 fprintf('\n');
@@ -24,48 +23,48 @@ scenario_desc = {'VoIP-like (21%)', 'Video-like (69%)', 'IoT-like (42%)'};
 thold_values = [30, 50, 70];
 num_seeds = 5;
 
-% 색상 (지연 그래프와 동일하게)
-colors.Baseline = [0.5 0.5 0.5];           % 회색 - 기존 방식
-colors.M0 = [0.3 0.5 0.8];                 % 파랑 - 기법 1
-colors.M1 = [0.95 0.7 0.2];                % 주황 - 기법 2
-colors.M2 = [0.4 0.7 0.4];                 % 초록 - 기법 3
+% 색상
+colors.Baseline = [0.5 0.5 0.5];
+colors.M0 = [0.3 0.5 0.8];
+colors.M1 = [0.95 0.7 0.2];
+colors.M2 = [0.4 0.7 0.4];
 
 output_dir = 'results/figures_delay';
 if ~exist(output_dir, 'dir'), mkdir(output_dir); end
 
-%% Figure: SA-RU 활용률 (1x3 - 시나리오별)
+%% Figure 1: SA-RU 활용률 막대그래프 (1x3)
 figure('Name', 'SA-RU Utilization', 'Position', [100 100 1500 450]);
 
 for sc_idx = 1:3
     sc = scenarios{sc_idx};
     subplot(1, 3, sc_idx);
     
-    % 데이터 수집: Base(1개) + M0(3개) + M1(3개) + M2(3개) = 10개 막대
+    % 데이터 수집: Base(1개) + SERM-∞(3개) + SERM-5(3개) + SERM-P(3개) = 10개
     util_data = zeros(1, 10);
     
-    % Baseline (T_hold 무관)
+    % Baseline
     util_data(1) = get_util(results_m0m1, sc, 0, 'Baseline', num_seeds) * 100;
     
-    % M0: T30, T50, T70
+    % SERM-∞: T30, T50, T70
     for th_idx = 1:3
         util_data(1 + th_idx) = get_util(results_m0m1, sc, thold_values(th_idx), 'M0', num_seeds) * 100;
     end
     
-    % M1: T30, T50, T70
+    % SERM-5: T30, T50, T70
     for th_idx = 1:3
         util_data(4 + th_idx) = get_util(results_m0m1, sc, thold_values(th_idx), 'M1(5)', num_seeds) * 100;
     end
     
-    % M2: T30, T50, T70
+    % SERM-P: T30, T50, T70
     for th_idx = 1:3
         util_data(7 + th_idx) = get_util(results_m2, sc, thold_values(th_idx), 'M2', num_seeds) * 100;
     end
     
     % 막대 색상
-    bar_colors = [colors.Baseline;  % Base
-                  colors.M0; colors.M0; colors.M0;  % M0
-                  colors.M1; colors.M1; colors.M1;  % M1
-                  colors.M2; colors.M2; colors.M2]; % M2
+    bar_colors = [colors.Baseline;
+                  colors.M0; colors.M0; colors.M0;
+                  colors.M1; colors.M1; colors.M1;
+                  colors.M2; colors.M2; colors.M2];
     
     % 막대 그리기
     hold on;
@@ -86,15 +85,16 @@ for sc_idx = 1:3
     
     % x축 레이블
     set(gca, 'XTick', 1:10, ...
-        'XTickLabel', {'기존', '30', '50', '70', '30', '50', '70', '30', '50', '70'}, ...
+        'XTickLabel', {'Base', '30', '50', '70', '30', '50', '70', '30', '50', '70'}, ...
         'FontSize', 8);
     
     % 그룹 레이블 (하단)
-    text(1, -12, '기존 방식', 'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', colors.Baseline);
-    text(3, -12, '기법 1', 'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', colors.M0);
-    text(6, -12, '기법 2', 'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', colors.M1);
-    text(9, -12, '기법 3', 'HorizontalAlignment', 'center', 'FontSize', 10, 'FontWeight', 'bold', 'Color', colors.M2);
+    text(1, -12, 'Baseline', 'HorizontalAlignment', 'center', 'FontSize', 9, 'FontWeight', 'bold', 'Color', colors.Baseline);
+    text(3, -12, 'SERM-\infty', 'HorizontalAlignment', 'center', 'FontSize', 9, 'FontWeight', 'bold', 'Color', colors.M0);
+    text(6, -12, 'SERM-5', 'HorizontalAlignment', 'center', 'FontSize', 9, 'FontWeight', 'bold', 'Color', colors.M1);
+    text(9, -12, 'SERM-P', 'HorizontalAlignment', 'center', 'FontSize', 9, 'FontWeight', 'bold', 'Color', colors.M2);
     
+    xlabel('T_{ret} (ms)', 'FontSize', 10);
     ylabel('SA-RU Utilization (%)', 'FontSize', 10);
     title(sprintf('시나리오 %s', sc), 'FontSize', 11);
     ylim([0 115]);
@@ -103,21 +103,22 @@ for sc_idx = 1:3
     set(gca, 'YGrid', 'on', 'XGrid', 'off');
 end
 
-%% 저장
-saveas(gcf, fullfile(output_dir, 'saru_utilization.png'));
-fprintf('[저장 완료] %s/saru_utilization.png\n', output_dir);
+%% 저장 (막대 - PDF + PNG)
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization.pdf'), 'ContentType', 'vector');
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization.png'), 'Resolution', 300);
+fprintf('[저장 완료] %s/saru_utilization.pdf / .png\n', output_dir);
 
-%% Figure 2: 꺾은선 그래프 (T_hold별 추이)
+%% Figure 2: 꺾은선 그래프 (T_ret별 추이)
 figure('Name', 'SA-RU Utilization Line', 'Position', [100 100 1400 400]);
 
 for sc_idx = 1:3
     sc = scenarios{sc_idx};
     subplot(1, 3, sc_idx);
     
-    % Baseline (T_hold 무관, 점선으로 표시)
+    % Baseline (T_ret 무관)
     u_base = get_util(results_m0m1, sc, 0, 'Baseline', num_seeds) * 100;
     
-    % M0, M1, M2 각 T_hold별
+    % SERM-∞, SERM-5, SERM-P 각 T_ret별
     u_m0 = zeros(1, 3);
     u_m1 = zeros(1, 3);
     u_m2 = zeros(1, 3);
@@ -133,7 +134,7 @@ for sc_idx = 1:3
     % Baseline 점선
     yline(u_base, '--', 'Color', colors.Baseline, 'LineWidth', 2);
     
-    % M0, M1, M2 꺾은선
+    % SERM-∞, SERM-5, SERM-P 꺾은선
     plot(thold_values, u_m0, '-o', 'Color', colors.M0, 'LineWidth', 2, ...
         'MarkerSize', 10, 'MarkerFaceColor', colors.M0);
     plot(thold_values, u_m1, '-s', 'Color', colors.M1, 'LineWidth', 2, ...
@@ -141,10 +142,9 @@ for sc_idx = 1:3
     plot(thold_values, u_m2, '-^', 'Color', colors.M2, 'LineWidth', 2, ...
         'MarkerSize', 10, 'MarkerFaceColor', colors.M2);
     
-    % 값 표시 제거 - 그래프만으로 충분
     hold off;
     
-    xlabel('T_{hold} (ms)', 'FontSize', 11);
+    xlabel('T_{ret} (ms)', 'FontSize', 11);
     ylabel('SA-RU Utilization (%)', 'FontSize', 11);
     title(sprintf('시나리오 %s', sc), 'FontSize', 12);
     xlim([25 75]);
@@ -153,13 +153,14 @@ for sc_idx = 1:3
     grid on;
     
     if sc_idx == 2
-        legend({'기존 방식', '기법 1', '기법 2', '기법 3'}, 'Location', 'southwest', 'FontSize', 9);
+        legend({'Baseline', 'SERM-\infty', 'SERM-5', 'SERM-P'}, 'Location', 'southwest', 'FontSize', 9);
     end
 end
 
-%% 저장 (꺾은선)
-saveas(gcf, fullfile(output_dir, 'saru_utilization_line.png'));
-fprintf('[저장 완료] %s/saru_utilization_line.png\n', output_dir);
+%% 저장 (꺾은선 - PDF + PNG)
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.pdf'), 'ContentType', 'vector');
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.png'), 'Resolution', 300);
+fprintf('[저장 완료] %s/saru_utilization_line.pdf / .png\n', output_dir);
 
 %% ═══════════════════════════════════════════════════════════════════════════
 %  Helper Function
@@ -200,7 +201,7 @@ function util_mean = get_util(results, scenario, thold_ms, method, num_seeds)
             end
         end
         
-        % Baseline은 거의 100% (T_hold 없으므로 Phantom 없음)
+        % Baseline은 거의 100%
         if strcmp(method, 'Baseline') && isnan(util)
             util = 1.0;
         end

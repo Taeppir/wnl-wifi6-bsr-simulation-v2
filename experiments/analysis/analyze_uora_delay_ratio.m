@@ -64,7 +64,7 @@ fprintf('  ───────────────────────
 fprintf('  Total:            %6.2f ms (100%%)\n\n', total_avg);
 
 %% Figure: 가로 Stacked Bar (서론용)
-figure('Name', 'UORA Delay Ratio', 'Position', [100 100 550 250]);
+figure('Name', 'UORA Delay Ratio', 'Position', [100 100 550 120]);
 
 % 색상 (진하게)
 bar_colors = [0.3 0.5 0.7;    % TF 대기 - 진한 파랑
@@ -73,34 +73,28 @@ bar_colors = [0.3 0.5 0.7;    % TF 대기 - 진한 파랑
 
 data = [init_avg, uora_avg, sa_avg];
 
-% 가로 막대
-b = barh(1, data, 'stacked');
+% 가로 막대 - 두께 줄임
+b = barh(1, data, 'stacked', 'BarWidth', 0.35);
 b(1).FaceColor = bar_colors(1,:);
 b(2).FaceColor = bar_colors(2,:);
 b(3).FaceColor = bar_colors(3,:);
 
-set(gca, 'YTick', [], 'FontSize', 11);
-xlabel('Delay (ms)', 'FontSize', 12);
-ylim([0.4 1.6]);
+set(gca, 'YTick', [], 'FontSize', 10);
+xlabel('Delay (ms)', 'FontSize', 11);
+ylim([0.6 1.4]);
 xlim([0 total_avg * 1.1]);
 
-% 범례 (비율만 - 절대값은 x축에서 읽힘)
+% 범례 - 오른쪽에 세로로 배치
 pct_init = init_avg / total_avg * 100;
 pct_sa = sa_avg / total_avg * 100;
-legend({sprintf('TF 대기 (%.1f%%)', pct_init), ...
-        sprintf('UORA 경쟁 (%.1f%%)', uora_ratio), ...
-        sprintf('SA 스케줄링 대기 (%.1f%%)', pct_sa)}, ...
-    'Location', 'southoutside', 'Orientation', 'horizontal', 'FontSize', 9);
+lgd = legend({sprintf('TF 대기 (%.1f%%)', pct_init), ...
+              sprintf('UORA 경쟁 (%.1f%%)', uora_ratio), ...
+              sprintf('SA 스케줄링 대기 (%.1f%%)', pct_sa)}, ...
+    'Location', 'eastoutside', 'FontSize', 8);
 
 grid on;
 set(gca, 'XGrid', 'on', 'YGrid', 'off');
-
-%% 요약 출력
-fprintf('[요약]\n');
-fprintf('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-fprintf('Baseline에서 UORA 경쟁이 전체 지연의 %.0f%% 차지\n', uora_ratio);
-fprintf('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-%% 저장
-saveas(gcf, fullfile(output_dir, 'uora_delay_ratio.png'));
-fprintf('\n[저장 완료] %s/uora_delay_ratio.png\n', output_dir);
+%% 저장 (PDF + PNG)
+exportgraphics(gcf, fullfile(output_dir, 'uora_delay_ratio.pdf'), 'ContentType', 'vector');
+exportgraphics(gcf, fullfile(output_dir, 'uora_delay_ratio.png'), 'Resolution', 300);
+fprintf('\n[저장 완료] %s/uora_delay_ratio.pdf / .png\n', output_dir);
