@@ -19,8 +19,8 @@ fprintf('╚══════════════════════�
 %  ═══════════════════════════════════════════════════════════════════════════
 fprintf('[데이터 로드]\n');
 
-m0m1_file = 'results/main_m0_m1_fixed/results.mat';
-m2_file = 'results/main_m2_fixed/results.mat';
+m0m1_file = 'results/main_m0_m1_final/results.mat';
+m2_file = 'results/main_m2_final/results.mat';
 
 if ~exist(m0m1_file, 'file'), error('M0/M1 결과 파일 없음: %s', m0m1_file); end
 if ~exist(m2_file, 'file'), error('M2 결과 파일 없음: %s', m2_file); end

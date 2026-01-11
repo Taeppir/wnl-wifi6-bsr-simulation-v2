@@ -36,7 +36,7 @@ function cfg = config_default()
     %  ═══════════════════════════════════════════════════
     
     cfg.num_stas = 20;               % STA 수
-    cfg.ocw_min = 7;                 % OCW 최소값
+    cfg.ocw_min = 15;                 % OCW 최소값
     cfg.ocw_max = 31;                % OCW 최대값
     cfg.mpdu_size = 2000;            % MPDU 크기 (bytes)
     
