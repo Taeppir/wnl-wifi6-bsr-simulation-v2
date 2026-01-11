@@ -33,7 +33,7 @@ output_dir = 'results/figures_delay';
 if ~exist(output_dir, 'dir'), mkdir(output_dir); end
 
 %% Figure 1: SA-RU 활용률 막대그래프 (1x3)
-figure('Name', 'SA-RU Utilization', 'Position', [100 100 1500 450]);
+figure('Name', 'SA-RU Utilization', 'Position', [100 100 1600 500]);
 
 for sc_idx = 1:3
     sc = scenarios{sc_idx};
@@ -105,15 +105,17 @@ end
 
 %% 저장 (막대 - PDF + PNG)
 exportgraphics(gcf, fullfile(output_dir, 'saru_utilization.pdf'), 'ContentType', 'vector');
-exportgraphics(gcf, fullfile(output_dir, 'saru_utilization.png'), 'Resolution', 300);
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization.png'), 'Resolution', 600);
 fprintf('[저장 완료] %s/saru_utilization.pdf / .png\n', output_dir);
 
 %% Figure 2: 꺾은선 그래프 (T_ret별 추이)
-figure('Name', 'SA-RU Utilization Line', 'Position', [100 100 1400 400]);
+figure('Name', 'SA-RU Utilization Line', 'Position', [100 100 1800 600]);
+
+ax = gobjects(1, 3);  % axes 핸들 저장
 
 for sc_idx = 1:3
     sc = scenarios{sc_idx};
-    subplot(1, 3, sc_idx);
+    ax(sc_idx) = subplot(1, 3, sc_idx);
     
     % Baseline (T_ret 무관)
     u_base = get_util(results_m0m1, sc, 0, 'Baseline', num_seeds) * 100;
@@ -131,17 +133,13 @@ for sc_idx = 1:3
     end
     
     hold on;
-    % Baseline 점선
     yline(u_base, '--', 'Color', colors.Baseline, 'LineWidth', 2);
-    
-    % SERM-∞, SERM-5, SERM-P 꺾은선
     plot(thold_values, u_m0, '-o', 'Color', colors.M0, 'LineWidth', 2, ...
         'MarkerSize', 10, 'MarkerFaceColor', colors.M0);
     plot(thold_values, u_m1, '-s', 'Color', colors.M1, 'LineWidth', 2, ...
         'MarkerSize', 10, 'MarkerFaceColor', colors.M1);
     plot(thold_values, u_m2, '-^', 'Color', colors.M2, 'LineWidth', 2, ...
         'MarkerSize', 10, 'MarkerFaceColor', colors.M2);
-    
     hold off;
     
     xlabel('T_{ret} (ms)', 'FontSize', 11);
@@ -157,11 +155,16 @@ for sc_idx = 1:3
     end
 end
 
-%% 저장 (꺾은선 - PDF + PNG)
-exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.pdf'), 'ContentType', 'vector');
-exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.png'), 'Resolution', 300);
-fprintf('[저장 완료] %s/saru_utilization_line.pdf / .png\n', output_dir);
+% 핸들로 위치 조정 (플롯 유지)
+set(ax(1), 'Position', [0.08 0.14 0.24 0.74]);
+set(ax(2), 'Position', [0.40 0.14 0.24 0.74]);
+set(ax(3), 'Position', [0.72 0.14 0.24 0.74]);
 
+%% 저장 - Padding 옵션 사용
+%% 저장 - Padding 옵션 사용
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.pdf'), 'ContentType', 'vector', 'Padding', 'figure');
+exportgraphics(gcf, fullfile(output_dir, 'saru_utilization_line.png'), 'Resolution', 600, 'Padding', 'figure');
+fprintf('[저장 완료] %s/saru_utilization_line.pdf / .png\n', output_dir);
 %% ═══════════════════════════════════════════════════════════════════════════
 %  Helper Function
 %  ═══════════════════════════════════════════════════════════════════════════
